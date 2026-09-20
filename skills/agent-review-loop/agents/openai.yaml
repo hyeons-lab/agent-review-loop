@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review Fix Loop"
+  short_description: "Iterate local reviews until the diff is clean"
+  default_prompt: "Use $agent-review-loop at high effort to review and fix the current working diff until clean."
