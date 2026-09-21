@@ -3,7 +3,7 @@
 User-local code review refinements shared by every review loop across Muse,
 Claude Code, Codex, and Antigravity/Gemini. Loops read this file plus the
 bundled base pillars (`thematic-review-pillars.md`) and file genuinely novel
-learnings here when a loop ends.
+learnings here when a round ends.
 
 Bullet format (one principle per bullet, filed under its pillar):
 
@@ -11,10 +11,10 @@ Bullet format (one principle per bullet, filed under its pillar):
   past the file where it was learned; never name an agent, model, runtime,
   or tool.
 
-Rules for writers: at most 5 new or refined bullets per loop run; subsume
-into an overlapping bullet instead of adding a sibling; never add a 9th
-pillar or rename one; append or refine only (no deletes, no reformatting);
-re-read this file immediately before editing.
+Rules for writers: at most 2 new or refined bullets per round and 5 per
+loop run; subsume into an overlapping bullet instead of adding a sibling;
+never add a 9th pillar or rename one; append or refine only (no deletes, no
+reformatting); re-read this file immediately before editing.
 
 ---
 

@@ -24,9 +24,11 @@ echo "--- 1. fresh full install ---"
 "${BUNDLE}/install.sh" > /tmp/rfl-run1.log 2>&1
 cat /tmp/rfl-run1.log
 for d in .agents/skills .config/muse/skills .claude/skills .codex/skills .gemini/config/skills; do
-  check "skill installed: $d" test -f "${FAKE}/$d/agent-review-loop/SKILL.md"
+  for s in agent-review-loop address-pr-comments; do
+    check "skill installed: $d/$s" test -f "${FAKE}/$d/$s/SKILL.md"
+    check "openai.yaml installed: $d/$s" test -f "${FAKE}/$d/$s/agents/openai.yaml"
+  done
   check "pillars installed: $d" test -f "${FAKE}/$d/agent-review-loop/thematic-review-pillars.md"
-  check "openai.yaml installed: $d" test -f "${FAKE}/$d/agent-review-loop/agents/openai.yaml"
 done
 check "refinements seeded" test -f "${FAKE}/.agents/review-refinements.md"
 check "seed has 8 pillars" test "$(grep -c '^### Pillar' "${FAKE}/.agents/review-refinements.md")" = "8"
@@ -60,6 +62,7 @@ rm -rf "${FAKE}"
 mkdir -p "${FAKE}"
 HOME="${FAKE}" "${BUNDLE}/install.sh" --claude --no-refinements > /tmp/rfl-run5.log 2>&1
 check "claude installed" test -f "${FAKE}/.claude/skills/agent-review-loop/SKILL.md"
+check "second skill installed" test -f "${FAKE}/.claude/skills/address-pr-comments/SKILL.md"
 check "codex absent" test ! -e "${FAKE}/.codex/skills/agent-review-loop"
 check "refinements skipped" test ! -e "${FAKE}/.agents/review-refinements.md"
 
@@ -67,14 +70,18 @@ echo "--- 6. link mode + converge ---"
 rm -rf "${FAKE}"
 mkdir -p "${FAKE}"
 HOME="${FAKE}" "${BUNDLE}/install.sh" --link > /tmp/rfl-run6.log 2>&1
-check "canonical is real dir" test -f "${FAKE}/.agents/skills/agent-review-loop/SKILL.md"
-check "claude is symlink" test -L "${FAKE}/.claude/skills/agent-review-loop"
-check "link points at canonical" test "$(readlink "${FAKE}/.claude/skills/agent-review-loop")" = "${FAKE}/.agents/skills/agent-review-loop"
+for s in agent-review-loop address-pr-comments; do
+  check "canonical is real dir: $s" test -f "${FAKE}/.agents/skills/$s/SKILL.md"
+  check "claude is symlink: $s" test -L "${FAKE}/.claude/skills/$s"
+  check "link points at canonical: $s" test "$(readlink "${FAKE}/.claude/skills/$s")" = "${FAKE}/.agents/skills/$s"
+done
 HOME="${FAKE}" "${BUNDLE}/install.sh" --link > /tmp/rfl-run6b.log 2>&1
 check "link re-run unchanged" grep -q "unchanged" /tmp/rfl-run6b.log
 HOME="${FAKE}" "${BUNDLE}/install.sh" > /tmp/rfl-run6c.log 2>&1
-check "copy mode replaces links" test ! -L "${FAKE}/.claude/skills/agent-review-loop"
-check "copy mode file valid" grep -q "^name: agent-review-loop" "${FAKE}/.claude/skills/agent-review-loop/SKILL.md"
+for s in agent-review-loop address-pr-comments; do
+  check "copy mode replaces links: $s" test ! -L "${FAKE}/.claude/skills/$s"
+  check "copy mode file valid: $s" grep -q "^name: $s" "${FAKE}/.claude/skills/$s/SKILL.md"
+done
 
 echo "--- 7. dry-run changes nothing ---"
 rm -rf "${FAKE}"
@@ -85,6 +92,32 @@ check "dry-run empty home" test -z "$(ls -A "${FAKE}")"
 echo "--- 8. no em dashes in bundle prose ---"
 if grep -r "—" "${BUNDLE}" --exclude-dir=tests >/dev/null 2>&1; then echo "FAIL: em dash found"; grep -rn "—" "${BUNDLE}" --exclude-dir=tests; fail=$((fail+1));
 else echo "PASS: no em dashes"; pass=$((pass+1)); fi
+
+echo "--- 9. upgrade refreshes skills, keeps learnings, skips missing ---"
+rm -rf "${FAKE}"
+mkdir -p "${FAKE}"
+HOME="${FAKE}" "${BUNDLE}/install.sh" --claude > /tmp/rfl-run9a.log 2>&1
+echo "- **Marker**: upgrade bullet" >> "${FAKE}/.agents/review-refinements.md"
+echo "stale" >> "${FAKE}/.claude/skills/agent-review-loop/SKILL.md"
+HOME="${FAKE}" "${BUNDLE}/install.sh" --upgrade > /tmp/rfl-run9b.log 2>&1
+check "upgrade refreshes stale skill" cmp -s "${BUNDLE}/skills/agent-review-loop/SKILL.md" "${FAKE}/.claude/skills/agent-review-loop/SKILL.md"
+check "upgrade keeps marker" grep -q "Marker" "${FAKE}/.agents/review-refinements.md"
+check "upgrade skips missing target" test ! -e "${FAKE}/.codex/skills/agent-review-loop"
+check "upgrade reports skip" grep -q "not installed, skipping" /tmp/rfl-run9b.log
+check "upgrade leaves refinements alone" grep -q "left untouched" /tmp/rfl-run9b.log
+rm "${FAKE}/.agents/review-refinements.md"
+HOME="${FAKE}" "${BUNDLE}/install.sh" --upgrade > /tmp/rfl-run9c.log 2>&1
+check "upgrade never seeds refinements" test ! -e "${FAKE}/.agents/review-refinements.md"
+
+echo "--- 10. upgrade respects linked installs ---"
+rm -rf "${FAKE}"
+mkdir -p "${FAKE}"
+HOME="${FAKE}" "${BUNDLE}/install.sh" --link > /tmp/rfl-run10a.log 2>&1
+echo "stale" >> "${FAKE}/.agents/skills/agent-review-loop/SKILL.md"
+HOME="${FAKE}" "${BUNDLE}/install.sh" --upgrade > /tmp/rfl-run10b.log 2>&1
+check "upgrade refreshes canonical" cmp -s "${BUNDLE}/skills/agent-review-loop/SKILL.md" "${FAKE}/.agents/skills/agent-review-loop/SKILL.md"
+check "upgrade leaves symlink" test -L "${FAKE}/.claude/skills/agent-review-loop"
+check "upgrade reports link kept" grep -q "leaving in place" /tmp/rfl-run10b.log
 
 echo
 echo "RESULT: ${pass} passed, ${fail} failed"

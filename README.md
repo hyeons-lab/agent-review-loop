@@ -1,11 +1,13 @@
 # `agent-review-loop`
 
-A multi-agent code review skill: it reviews the working diff with subagents
-at a fixed effort (`low`, `medium`, `high`, `max`), fixes what they find,
-re-reviews until clean, and files novel learnings into a shared pillars file
-so the next review starts smarter. One skill body runs in **Muse**,
-**Claude Code**, **Codex**, and **Antigravity/Gemini**; a runtime adapter
-inside the skill picks the native subagent mechanism for each.
+Two multi-agent review skills sharing one pillars file: `agent-review-loop`
+reviews the working diff with subagents at a fixed effort (`low`, `medium`,
+`high`, `max`), fixes what they find, and re-reviews until clean, while
+`address-pr-comments` addresses review feedback on a target PR and syncs the
+stack. Both file novel learnings into the shared pillars file after every
+round, so each round reviews against what the previous rounds learned.
+Each skill body runs in **Muse**, **Claude Code**, **Codex**, and
+**Antigravity/Gemini**.
 
 ## Contents
 
@@ -14,6 +16,10 @@ inside the skill picks the native subagent mechanism for each.
 - `skills/agent-review-loop/thematic-review-pillars.md`: the stable base
   pillars (8 categories). Loops read it; they never edit it.
 - `skills/agent-review-loop/agents/openai.yaml`: Codex display metadata
+  (ignored by other runtimes).
+- `skills/address-pr-comments/SKILL.md`: the PR feedback skill (fetch and
+  triage comments, apply fixes, sync stacked PRs, file learnings).
+- `skills/address-pr-comments/agents/openai.yaml`: Codex display metadata
   (ignored by other runtimes).
 - `templates/review-refinements.template.md`: seed for the shared learnings
   file that loops update.
@@ -29,7 +35,7 @@ cd agent-review-loop
 ./install.sh
 ```
 
-Default installs the skill to every supported location and seeds the shared
+Default installs the skills to every supported location and seeds the shared
 refinements file. Pick targets to install fewer:
 
 ```bash
@@ -38,6 +44,7 @@ refinements file. Pick targets to install fewer:
 ./install.sh --muse --agents         # only Muse and the canonical store
 ./install.sh --link                  # symlink agent dirs to one canonical copy
 ./install.sh --no-refinements        # skill only; do not seed the learnings file
+./install.sh --upgrade               # refresh installed skills; learnings untouched
 ./install.sh --dry-run               # print what would change; change nothing
 ```
 
@@ -53,6 +60,7 @@ Restart the agent (or start a new session) after installing, then invoke:
 
 ```text
 /agent-review-loop [low|medium|high|max]
+/address-pr-comments <pr_number_or_url>
 ```
 
 Default effort is `high`. The agent-neutral name sits alongside any
@@ -63,11 +71,16 @@ existing `review-fix-loop` skill without collision.
 ```bash
 cd agent-review-loop
 git pull
-./install.sh
+./install.sh --upgrade
 ```
 
-Skill files refresh to the checked-out version; your learnings stay. Run
-with `--dry-run` first to preview what would change.
+`--upgrade` refreshes every already-installed skill to the checked-out
+version and verifies the result. It never installs to new locations,
+never replaces symlinked installs, and never seeds or modifies
+`~/.agents/review-refinements.md`, so accumulated learnings survive. Plain
+`./install.sh` also preserves learnings but installs to every target; use
+`--upgrade` for a refresh only. Run with `--dry-run` first to preview what
+would change.
 
 ## The Shared Pillars File
 
@@ -84,8 +97,9 @@ performance, simplification). Resolution order:
 
 Multi-agent safety is built into the skill: one write target, a fresh read
 immediately before every edit, tool-agnostic bullets with no signatures,
-subsumption over duplication, append-only discipline, and a 5-bullet cap
-per loop run. Pillar numbers and titles are a frozen contract across loops.
+subsumption over duplication, append-only discipline, and a 2-bullet cap
+per round (5 per loop run). Pillar numbers and titles are a frozen
+contract across loops.
 Repo-specific lessons bootstrap a repo-local `.agents/review-refinements.md`
 on demand, so each repo's reviews improve with use while general principles
 accumulate in the canonical file.
@@ -108,11 +122,11 @@ accumulate in the canonical file.
 ## Uninstall
 
 ```bash
-rm -rf ~/.agents/skills/agent-review-loop \
-  ~/.config/muse/skills/agent-review-loop \
-  ~/.claude/skills/agent-review-loop \
-  ~/.codex/skills/agent-review-loop \
-  ~/.gemini/config/skills/agent-review-loop
+rm -rf ~/.agents/skills/agent-review-loop ~/.agents/skills/address-pr-comments \
+  ~/.config/muse/skills/agent-review-loop ~/.config/muse/skills/address-pr-comments \
+  ~/.claude/skills/agent-review-loop ~/.claude/skills/address-pr-comments \
+  ~/.codex/skills/agent-review-loop ~/.codex/skills/address-pr-comments \
+  ~/.gemini/config/skills/agent-review-loop ~/.gemini/config/skills/address-pr-comments
 ```
 
 This leaves `~/.agents/review-refinements.md` in place. Delete it as well
@@ -123,20 +137,20 @@ only when you mean to discard your accumulated learnings.
 When a script is not wanted:
 
 ```bash
-SKILL=agent-review-loop
-mkdir -p ~/.agents/skills/$SKILL
-cp skills/$SKILL/SKILL.md skills/$SKILL/thematic-review-pillars.md ~/.agents/skills/$SKILL/
-mkdir -p ~/.agents/skills/$SKILL/agents
-cp skills/$SKILL/agents/openai.yaml ~/.agents/skills/$SKILL/agents/
+mkdir -p ~/.agents/skills/agent-review-loop/agents ~/.agents/skills/address-pr-comments/agents
+cp skills/agent-review-loop/SKILL.md skills/agent-review-loop/thematic-review-pillars.md ~/.agents/skills/agent-review-loop/
+cp skills/agent-review-loop/agents/openai.yaml ~/.agents/skills/agent-review-loop/agents/
+cp skills/address-pr-comments/SKILL.md ~/.agents/skills/address-pr-comments/
+cp skills/address-pr-comments/agents/openai.yaml ~/.agents/skills/address-pr-comments/agents/
 # repeat the copies (or symlink) into any agent dir from the table above
 [ -e ~/.agents/review-refinements.md ] || cp templates/review-refinements.template.md ~/.agents/review-refinements.md
 ```
 
 ## Contributing
 
-Skill changes go in `skills/agent-review-loop/`; installer changes in
-`install.sh`. Before pushing, run the verification suite (fake `HOME`, safe
-to run anywhere):
+Skill changes go in `skills/<name>/`; installer changes in `install.sh`.
+Before pushing, run the verification suite (fake `HOME`, safe to run
+anywhere):
 
 ```bash
 ./tests/verify-install.sh
