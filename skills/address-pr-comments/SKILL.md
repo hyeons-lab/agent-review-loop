@@ -45,8 +45,9 @@ flowchart TD
     D --> E[Thematic synthesis: generalize the shared pillars]
     E --> F[Commit, cascade-rebase the stack & submit]
     F --> G[Cancel superseded CI runs & verify checks]
-    G -->|"checks red"| A
+    G -->|"checks red, cycle < 3"| A
     G -->|"checks green"| H[Output summary]
+    G -->|"checks red, cycle = 3"| I[Stop and report]
 ```
 
 ## Prerequisites
@@ -57,9 +58,13 @@ prefix the commands below with
 `export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"` (Apple Silicon,
 then Intel Mac; Linuxbrew users add `$(brew --prefix)/bin` instead).
 
-The skill takes a target PR number or URL. When omitted, use the open PR
-for the current branch and stop when there is not exactly one. If the work
-lives in a git worktree, run every `git` command against it explicitly
+The skill takes a target PR number or URL (`<pr_input>`). When omitted,
+use the open PR for the current branch and stop when there is not
+exactly one. Run in a checkout of the PR's repository (or its worktree):
+`gh` fills `{owner}` and `{repo}` in API paths from that checkout.
+Section 1A resolves the input to a number once; use that number for
+`<pr_number>` in every later snippet. If the work lives in a git
+worktree, run every `git` command against it explicitly
 (`git -C <worktree> ...`) rather than relying on `cd`.
 
 ---
@@ -72,17 +77,25 @@ against lessons earlier cycles filed.
 
 ### A. Query the GitHub API for feedback
 
-Retrieve both inline diff review comments and top-level issue and review
-comments for the target PR `<pr_number>`:
+Retrieve inline review comments, submitted review summaries, and
+top-level issue comments for the target PR. Resolve the input first,
+then fetch:
 
 ```bash
+# Resolve once: canonical number plus the triage SHA for the summary
+gh pr view <pr_input> --json number,headRefOid --jq '"number: \(.number)", "triage_sha: \(.headRefOid)"' || { echo "ERROR: PR resolve failed; check the number or URL and gh auth"; exit 1; }
+
 # Inline diff comments
 gh api /repos/{owner}/{repo}/pulls/<pr_number>/comments > /tmp/pr-diff-comments.json || { echo "ERROR: diff-comment fetch failed; check the PR number and gh auth"; exit 1; }
-jq -r '.[] | "DIFF [\(.id)] \(.path):\(.line) by \(.user.login):\n\(.body)\n"' /tmp/pr-diff-comments.json
+jq -r '.[] | "DIFF [\(.id)] \(.path):\(.line) by \(.user.login):\n\(.body)\n"' /tmp/pr-diff-comments.json || { echo "ERROR: diff-comment render failed; check jq and the JSON payload"; exit 1; }
 
-# Top-level issue and review comments (Copilot, review bots, humans)
+# Submitted review summaries (approve/changes-requested bodies: Copilot, humans)
+gh api /repos/{owner}/{repo}/pulls/<pr_number>/reviews > /tmp/pr-reviews.json || { echo "ERROR: review fetch failed; check the PR number and gh auth"; exit 1; }
+jq -r '.[] | "REVIEW [\(.id)] \(.state) by \(.user.login):\n\(.body)\n"' /tmp/pr-reviews.json || { echo "ERROR: review render failed; check jq and the JSON payload"; exit 1; }
+
+# Top-level issue comments (review bots, humans)
 gh api /repos/{owner}/{repo}/issues/<pr_number>/comments > /tmp/pr-issue-comments.json || { echo "ERROR: issue-comment fetch failed; check the PR number and gh auth"; exit 1; }
-jq -r '.[] | "ISSUE [\(.id)] by \(.user.login):\n\(.body)\n"' /tmp/pr-issue-comments.json
+jq -r '.[] | "ISSUE [\(.id)] by \(.user.login):\n\(.body)\n"' /tmp/pr-issue-comments.json || { echo "ERROR: issue-comment render failed; check jq and the JSON payload"; exit 1; }
 ```
 
 ### B. Categorize the findings
@@ -163,9 +176,9 @@ Pick the write target in order:
 2. A repo-specific lesson (it names this repo's modules, crates, tools, CI
    jobs, or architectures): file it in the repo's own
    `.agents/review-refinements.md`, creating that file with the 8
-   `### Pillar N:` headings when it does not exist yet. Leave the
-   repo-local file uncommitted; it goes out only with the user's approved
-   commit.
+   `### Pillar N:` headings when it does not exist yet. Do not commit the
+   repo-local file on your own; include it only in a commit the user
+   explicitly approved.
 3. Otherwise the canonical `~/.agents/review-refinements.md`. When it does
    not exist yet, create it with the 8 `### Pillar N:` headings, then
    append.
@@ -210,8 +223,7 @@ Rules:
 2. **Push.**
    - Stacked PR workflow:
      ```bash
-     gh stack rebase
-     gh stack submit --auto
+     gh stack rebase && gh stack submit --auto
      ```
    - Plain branch: always push with an explicit destination refspec, never
      a bare `git push -u origin <branch>`, which can resolve to `main`
@@ -222,13 +234,16 @@ Rules:
 3. **Cancel superseded CI runs.** Every push queues a build; cancel runs
    on this PR's branch whose head SHA is no longer the tip:
    ```bash
-   read -r branch tip < <(gh pr view <pr_number> --json headRefName,headRefOid --jq '[.headRefName, .headRefOid] | @tsv') || { echo "ERROR: gh pr view failed; refusing to cancel"; exit 1; }
-   if [ -z "$branch" ] || [ -z "$tip" ]; then echo "no branch or tip SHA; refusing to cancel"; exit 1; fi
-   runs=$(gh api --paginate --method GET "/repos/{owner}/{repo}/actions/runs" -f branch="$branch" --jq '.workflow_runs[] | select(.status != "completed") | "\(.id) \(.head_sha)"') || { echo "WARNING: run listing failed; leaving runs uncancelled"; exit 1; }
-   tip_now=$(gh pr view <pr_number> --json headRefOid --jq .headRefOid) || { echo "ERROR: tip re-read failed; refusing to cancel"; exit 1; }
+   snap=$(gh pr view <pr_number> --json headRefName,headRefOid --jq '[.headRefName, .headRefOid] | @tsv') || { echo "ERROR: gh pr view failed; refusing to cancel" >&2; exit 1; }
+   read -r branch tip <<<"$snap"
+   if [ -z "$branch" ] || [ -z "$tip" ] || [ "$branch" = "null" ] || [ "$tip" = "null" ]; then echo "ERROR: no branch or tip SHA; refusing to cancel" >&2; exit 1; fi
+   runs=$(gh api --paginate --method GET "/repos/{owner}/{repo}/actions/runs" -f branch="$branch" --jq '.workflow_runs[] | select(.status != "completed") | "\(.id) \(.head_sha)"') || { echo "ERROR: run listing failed; leaving runs uncancelled" >&2; exit 1; }
+   tip_now=$(gh pr view <pr_number> --json headRefOid --jq .headRefOid) || { echo "ERROR: tip re-read failed; refusing to cancel" >&2; exit 1; }
+   if [ -z "$tip_now" ] || [ "$tip_now" = "null" ]; then echo "ERROR: empty tip SHA on re-read; refusing to cancel" >&2; exit 1; fi
    if [ -n "$runs" ]; then
      printf '%s\n' "$runs" | while read -r id sha; do
-       [ "$sha" = "$tip_now" ] || gh run cancel "$id" || echo "WARNING: could not cancel run $id"
+       [ -n "$id" ] || continue
+       [ "$sha" = "$tip_now" ] || gh run cancel "$id" || echo "WARNING: could not cancel run $id" >&2
      done
    fi
    ```
@@ -246,17 +261,19 @@ Rules:
      resolveReviewThread(input: {threadId: $threadId}) {
        thread { isResolved }
      }
-   }' -F threadId="$THREAD_ID"
+   }' -F threadId="$THREAD_ID" || { echo "ERROR: thread resolve failed for $THREAD_ID; retry or resolve manually"; exit 1; }
    ```
 5. **Verify CI.** Poll bounded until checks settle (at most 30 rounds,
    60 seconds apart; a timeout counts as inconclusive and is reported as
    such), then read the status column:
    ```bash
    for i in $(seq 1 30); do
-     out=$(gh pr checks <pr_number>)
+     out=$(gh pr checks <pr_number> --json name,bucket); rc=$?
+     if [ $rc -ne 0 ] && ! echo "$out" | jq -e . >/dev/null 2>&1; then echo "WARNING: checks fetch failed (attempt $i of 30); retrying"; sleep 60; continue; fi
      printf '%s\n' "$out"
-     echo "$out" | grep -qE 'pending|queued|in_progress|waiting|requested' || break
-     sleep 60
+     settle=$(echo "$out" | jq -r '[.[].bucket] | if any(. == "pending") then "wait" else "done" end') || { echo "WARNING: checks parse failed (attempt $i of 30); retrying"; sleep 60; continue; }
+     [ "$settle" = "done" ] && break
+     if [ "$i" -lt 30 ]; then sleep 60; fi
    done
    ```
    `gh pr checks --watch` **exits 0 even when checks fail**, so never
@@ -265,8 +282,9 @@ Rules:
    gh run list --branch <branch> --json conclusion,name,status
    ```
    If a check is red, first check whether `main` is red too before
-   blaming the branch. Run at most 3 fix cycles per invocation; if
-   checks are still red, stop and report the failing checks, whether
+   blaming the branch. Run at most 3 fix cycles per invocation (each
+   pass through fetch, fix, and push is one cycle); if the cap is reached
+   with checks still red, stop and report the failing checks, whether
    `main` is red too, and the suspected cause.
 
 ---
@@ -275,8 +293,8 @@ Rules:
 
 Give the user a structured summary:
 
-1. **Reviewed scope**: PR number plus the head SHA the comments were
-   triaged against, so a mid-run push shows as drift.
+1. **Reviewed scope**: PR number plus the `triage_sha` printed by the
+   section 1A resolve step, so a mid-run push shows as drift.
 2. **Addressed review items**: each comment handled, with file paths, line
    numbers, and what changed.
 3. **False positives / dismissed feedback**: with the technical

@@ -135,7 +135,10 @@ surrounding source it needs (callers, types, tests, configs) against the
 8. Code Simplification, Cleanup & Complexity Reduction
 
 Use your runtime's row. Every reviewer in the round reports before you
-classify anything.
+classify anything. If a reviewer has not reported within the runtime
+default timeout, re-prompt it once; if still silent, proceed with the
+reports in hand, note the missing lens in the round summary, and treat
+its pillars as uncovered next round.
 
 | Runtime | How to spawn one reviewer per lens | How to collect |
 |---|---|---|
@@ -261,9 +264,9 @@ Pick the write target in order:
    `.agents/review-refinements.md`, creating that file with the 8
    `### Pillar N:` headings when it does not exist yet. This is how each
    repo's reviews get sharper over time: repo invariants accumulate in the
-   repo, general principles accumulate in the canonical file. Leave the
-   repo-local file uncommitted; it goes out only with the user's approved
-   commit.
+   repo, general principles accumulate in the canonical file. Do not commit
+   the repo-local file on your own; include it only in a commit the user
+   explicitly approved.
 3. Otherwise the canonical `~/.agents/review-refinements.md`. When it does
    not exist yet, create it with the 8 `### Pillar N:` headings (copy their
    exact titles from the bundled base pillars file), then append.

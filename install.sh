@@ -80,11 +80,26 @@ log() {
   printf '%s\n' "$*"
 }
 
+err() {
+  printf '%s\n' "$*" >&2
+}
+
+copy_atomic() {
+  # copy_atomic <src> <dest>: copy via temp file plus rename.
+  local src="$1" dest="$2" tmp
+  tmp="${dest}.tmp.$$"
+  if cp "${src}" "${tmp}" && mv "${tmp}" "${dest}"; then
+    return 0
+  fi
+  rm -f "${tmp}"
+  return 1
+}
+
 install_file() {
   # install_file <src> <dest>: copy when missing or different; else report.
   local src="$1" dest="$2"
   if [ ! -f "${src}" ]; then
-    log "ERROR: missing bundle file: ${src}"
+    err "ERROR: missing bundle file: ${src}"
     return 1
   fi
   if [ -L "${dest}" ]; then
@@ -92,20 +107,20 @@ install_file() {
       printf '[dry-run] replace symlink with file: %s\n' "${dest}"
     else
       log "  replace symlink with file: ${dest}"
-      if rm "${dest}" && cp "${src}" "${dest}"; then
+      if rm "${dest}" && copy_atomic "${src}" "${dest}"; then
         printf '  updated: %s\n' "${dest}"
       else
-        printf '  FAILED: %s\n' "${dest}"
+        printf '  FAILED to replace: %s (check permissions, then re-run install.sh)\n' "${dest}"
         return 1
       fi
     fi
   elif [ ! -f "${dest}" ]; then
     if [ "${DRY_RUN}" -eq 1 ]; then
       printf '[dry-run] install %s\n' "${dest}"
-    elif cp "${src}" "${dest}"; then
+    elif copy_atomic "${src}" "${dest}"; then
       printf '  installed: %s\n' "${dest}"
     else
-      printf '  FAILED: %s\n' "${dest}"
+      printf '  FAILED to install: %s (check permissions and disk space, then re-run install.sh)\n' "${dest}"
       return 1
     fi
   elif cmp -s "${src}" "${dest}"; then
@@ -113,10 +128,10 @@ install_file() {
   else
     if [ "${DRY_RUN}" -eq 1 ]; then
       printf '[dry-run] update %s\n' "${dest}"
-    elif cp "${src}" "${dest}"; then
+    elif copy_atomic "${src}" "${dest}"; then
       printf '  updated: %s\n' "${dest}"
     else
-      printf '  FAILED: %s\n' "${dest}"
+      printf '  FAILED to update: %s (check permissions and disk space, then re-run install.sh)\n' "${dest}"
       return 1
     fi
   fi
@@ -160,7 +175,7 @@ install_skill_link() {
     printf '  unchanged: %s\n' "${dest}"
     return 0
   fi
-  if [ -e "${dest}" ] || [ -L "${dest}" ]; then
+  if ! is_missing "${dest}"; then
     log "  replacing existing path with symlink: ${dest}"
     rm -rf "${dest}" || return 1
   fi
@@ -178,12 +193,12 @@ install_skill_link() {
 
 seed_refinements() {
   log "==> Shared refinements: ${CANONICAL_REFINEMENTS}"
-  if [ -e "${CANONICAL_REFINEMENTS}" ] || [ -L "${CANONICAL_REFINEMENTS}" ]; then
+  if ! is_missing "${CANONICAL_REFINEMENTS}"; then
     log "  kept existing file (never overwritten)"
     return 0
   fi
   if [ ! -f "${TEMPLATE_SRC}" ]; then
-    log "ERROR: missing template: ${TEMPLATE_SRC}"
+    err "ERROR: missing template: ${TEMPLATE_SRC}"
     return 1
   fi
   if [ "${DRY_RUN}" -eq 1 ]; then
@@ -193,8 +208,8 @@ seed_refinements() {
       printf '  FAILED to create directory: %s\n' "$(dirname "${CANONICAL_REFINEMENTS}")"
       return 1
     fi
-    if ! cp "${TEMPLATE_SRC}" "${CANONICAL_REFINEMENTS}"; then
-      printf '  FAILED: %s\n' "${CANONICAL_REFINEMENTS}"
+    if ! copy_atomic "${TEMPLATE_SRC}" "${CANONICAL_REFINEMENTS}"; then
+      printf '  FAILED to seed: %s (check permissions and disk space, then re-run install.sh)\n' "${CANONICAL_REFINEMENTS}"
       return 1
     fi
     log "  seeded from template (edit freely; future runs keep it)"
@@ -259,7 +274,7 @@ while [ $# -gt 0 ]; do
     --upgrade) UPGRADE_MODE=1 ;;
     --dry-run)      DRY_RUN=1 ;;
     -h|--help)      usage; exit 0 ;;
-    *)              log "ERROR: unknown option: $1"; usage; exit 2 ;;
+    *)              err "ERROR: unknown option: $1"; usage; exit 2 ;;
   esac
   shift
 done
@@ -279,7 +294,7 @@ AGENTS_BASE="${CANONICAL_SKILLS_DIR}"
 
 for skill in ${SKILLS}; do
   if [ ! -f "${SCRIPT_DIR}/skills/${skill}/SKILL.md" ]; then
-    log "ERROR: skill source not found: ${SCRIPT_DIR}/skills/${skill}/SKILL.md"
+    err "ERROR: skill source not found: ${SCRIPT_DIR}/skills/${skill}/SKILL.md"
     exit 1
   fi
 done
@@ -292,14 +307,11 @@ if [ "${UPGRADE_MODE}" -eq 1 ]; then
     LINK_MODE=0
   fi
 fi
-# Link mode and upgrade both need the canonical store in scope: links are
-# created against it, and linked installs refresh through it (a missing
-# canonical copy is still skipped, never newly installed).
+# Link mode and upgrade both need the canonical store in scope and first:
+# links are created against it, and linked installs refresh through it (a
+# missing canonical copy is still skipped, never newly installed).
 if [ "${LINK_MODE}" -eq 1 ] || [ "${UPGRADE_MODE}" -eq 1 ]; then
-  case " ${TARGETS} " in
-    *" agents "*) ;;
-    *) TARGETS="agents ${TARGETS}" ;;
-  esac
+  TARGETS="$(printf 'agents\n%s\n' ${TARGETS} | awk '!seen[$0]++' | tr '\n' ' ')"
 fi
 
 failures=0

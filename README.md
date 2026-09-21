@@ -122,8 +122,8 @@ accumulate in the canonical file.
 - `--link` converges too: correct links report `unchanged`, wrong ones are
   repointed, and switching back to a plain `./install.sh` replaces links
   with real copies.
-- Verify any outcome with `./install.sh --dry-run`: empty output means
-  nothing would change.
+- Verify any outcome with `./install.sh --dry-run`: only `[dry-run]`
+  lines describe pending changes; `unchanged` lines mean current.
 
 ## Uninstall
 
