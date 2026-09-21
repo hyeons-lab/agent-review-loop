@@ -13,7 +13,7 @@ checklist.
 
 This skill runs in Muse, Claude Code, Codex, and Antigravity/Gemini. It
 runs its `gh` and `git` commands directly and needs no subagents. It shares
-the two tier review criteria with `agent-review-loop`: the stable base
+the two-tier review criteria with `agent-review-loop`: the stable base
 pillars plus the evolving shared learnings file.
 
 ## 0. Core Invariants
@@ -46,6 +46,7 @@ flowchart TD
     E --> F[Commit, cascade-rebase the stack & submit]
     F --> G[Cancel superseded CI runs & verify checks]
     G -->|"checks red"| A
+    G -->|"checks green"| H[Output summary]
 ```
 
 ## Prerequisites
@@ -65,6 +66,10 @@ lives in a git worktree, run every `git` command against it explicitly
 
 ## 1. Fetch & triage PR comments
 
+On cycles after the first, re-read the shared refinements write target
+(same fresh-read rule as section 3) before triaging, so this cycle audits
+against lessons earlier cycles filed.
+
 ### A. Query the GitHub API for feedback
 
 Retrieve both inline diff review comments and top-level issue and review
@@ -72,12 +77,12 @@ comments for the target PR `<pr_number>`:
 
 ```bash
 # Inline diff comments
-gh api /repos/{owner}/{repo}/pulls/<pr_number>/comments \
-  | jq -r '.[] | "DIFF [\(.id)] \(.path):\(.line) by \(.user.login):\n\(.body)\n"'
+gh api /repos/{owner}/{repo}/pulls/<pr_number>/comments > /tmp/pr-diff-comments.json || { echo "ERROR: diff-comment fetch failed; check the PR number and gh auth"; exit 1; }
+jq -r '.[] | "DIFF [\(.id)] \(.path):\(.line) by \(.user.login):\n\(.body)\n"' /tmp/pr-diff-comments.json
 
 # Top-level issue and review comments (Copilot, review bots, humans)
-gh api /repos/{owner}/{repo}/issues/<pr_number>/comments \
-  | jq -r '.[] | "ISSUE [\(.id)] by \(.user.login):\n\(.body)\n"'
+gh api /repos/{owner}/{repo}/issues/<pr_number>/comments > /tmp/pr-issue-comments.json || { echo "ERROR: issue-comment fetch failed; check the PR number and gh auth"; exit 1; }
+jq -r '.[] | "ISSUE [\(.id)] by \(.user.login):\n\(.body)\n"' /tmp/pr-issue-comments.json
 ```
 
 ### B. Categorize the findings
@@ -217,19 +222,22 @@ Rules:
 3. **Cancel superseded CI runs.** Every push queues a build; cancel runs
    on this PR's branch whose head SHA is no longer the tip:
    ```bash
-   branch=$(gh pr view <pr_number> --json headRefName --jq .headRefName) || { echo "ERROR: gh pr view failed; refusing to cancel"; exit 1; }
-   tip=$(gh pr view <pr_number> --json headRefOid --jq .headRefOid) || { echo "ERROR: gh pr view failed; refusing to cancel"; exit 1; }
-   [ -z "$tip" ] && { echo "no tip SHA; refusing to cancel"; exit 1; }
-   for status in queued in_progress; do
-     gh api --paginate "/repos/{owner}/{repo}/actions/runs?branch=$branch&status=$status" \
-       --jq '.workflow_runs[] | "\(.id) \(.head_sha)"' \
-     | while read -r id sha; do
-         [ "$sha" = "$tip" ] || gh run cancel "$id"
-       done
-   done
+   read -r branch tip < <(gh pr view <pr_number> --json headRefName,headRefOid --jq '[.headRefName, .headRefOid] | @tsv') || { echo "ERROR: gh pr view failed; refusing to cancel"; exit 1; }
+   if [ -z "$branch" ] || [ -z "$tip" ]; then echo "no branch or tip SHA; refusing to cancel"; exit 1; fi
+   runs=$(gh api --paginate --method GET "/repos/{owner}/{repo}/actions/runs" -f branch="$branch" --jq '.workflow_runs[] | select(.status != "completed") | "\(.id) \(.head_sha)"') || { echo "WARNING: run listing failed; leaving runs uncancelled"; exit 1; }
+   tip_now=$(gh pr view <pr_number> --json headRefOid --jq .headRefOid) || { echo "ERROR: tip re-read failed; refusing to cancel"; exit 1; }
+   if [ -n "$runs" ]; then
+     printf '%s\n' "$runs" | while read -r id sha; do
+       [ "$sha" = "$tip_now" ] || gh run cancel "$id" || echo "WARNING: could not cancel run $id"
+     done
+   fi
    ```
-   The guards matter: a failed lookup or an empty tip must never widen
-   into cancelling other branches' runs.
+   The guards matter: a failed lookup, an empty branch, or an empty tip
+   must never widen into cancelling other branches' runs. The branch
+   travels as an encoded API parameter (never interpolated into the URL),
+   unfinished runs of every status are listed (gated runs leak past a
+   queued-only filter), and the tip is re-read after listing so a
+   concurrent push's fresh runs are never cancelled.
 4. **Resolve addressed review threads** via GraphQL, once the fix is
    pushed:
    ```bash
@@ -240,9 +248,16 @@ Rules:
      }
    }' -F threadId="$THREAD_ID"
    ```
-5. **Verify CI.**
+5. **Verify CI.** Poll bounded until checks settle (at most 30 rounds,
+   60 seconds apart; a timeout counts as inconclusive and is reported as
+   such), then read the status column:
    ```bash
-   gh pr checks <pr_number>
+   for i in $(seq 1 30); do
+     out=$(gh pr checks <pr_number>)
+     printf '%s\n' "$out"
+     echo "$out" | grep -qE 'pending|queued|in_progress|waiting|requested' || break
+     sleep 60
+   done
    ```
    `gh pr checks --watch` **exits 0 even when checks fail**, so never
    trust its exit code. Read the status column, or:
@@ -250,7 +265,9 @@ Rules:
    gh run list --branch <branch> --json conclusion,name,status
    ```
    If a check is red, first check whether `main` is red too before
-   blaming the branch.
+   blaming the branch. Run at most 3 fix cycles per invocation; if
+   checks are still red, stop and report the failing checks, whether
+   `main` is red too, and the suspected cause.
 
 ---
 

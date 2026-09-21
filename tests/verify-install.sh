@@ -111,6 +111,9 @@ for s in agent-review-loop address-pr-comments; do
 done
 check "upgrade leaves refinements byte-identical" cmp -s /tmp/rfl-before.md "${FAKE}/.agents/review-refinements.md"
 check "upgrade reports skip" grep -q "not installed, skipping" /tmp/rfl-run9b.log
+for s in agent-review-loop address-pr-comments; do
+  check "upgrade never installs missing canonical: $s" test ! -e "${FAKE}/.agents/skills/$s"
+done
 check "upgrade leaves refinements alone" grep -q "left untouched" /tmp/rfl-run9b.log
 rm "${FAKE}/.agents/review-refinements.md"
 HOME="${FAKE}" "${BUNDLE}/install.sh" --upgrade > /tmp/rfl-run9c.log 2>&1
@@ -139,8 +142,11 @@ HOME="${FAKE}" "${BUNDLE}/install.sh" --upgrade --link --claude > /tmp/rfl-run11
 check "upgrade ignores link note" grep -q "ignores --link" /tmp/rfl-run11c.log
 check "link flag changes nothing under upgrade" cmp -s /tmp/rfl-run11b.log <(grep -v "ignores --link" /tmp/rfl-run11c.log)
 check "upgrade covers canonical scope" grep -q ".agents/skills" /tmp/rfl-run11b.log
-check "upgrade adds no new targets" test ! -e "${FAKE}/.codex/skills/agent-review-loop"
-check "upgrade keeps copy type" test ! -L "${FAKE}/.claude/skills/agent-review-loop"
+for s in agent-review-loop address-pr-comments; do
+  check "upgrade never installs missing canonical: $s" test ! -e "${FAKE}/.agents/skills/$s"
+  check "upgrade adds no new targets: $s" test ! -e "${FAKE}/.codex/skills/$s"
+  check "upgrade keeps copy type: $s" test ! -L "${FAKE}/.claude/skills/$s"
+done
 
 echo
 echo "RESULT: ${pass} passed, ${fail} failed"

@@ -65,9 +65,10 @@ default and say so.
 Choose the effort from the diff, not from habit: unfamiliar code, large
 diffs, or security-sensitive areas earn `max`; small follow-ups on a
 recently reviewed diff do fine at `low` or `medium`. When three
-consecutive rounds each yield at most one minor finding, propose dropping
-one level to the user rather than burning full rounds; continue at the
-lower effort only with explicit approval.
+consecutive rounds each yield at most one finding and none above `quality`
+severity (no `bug`, `correctness`, or `convention` findings), propose
+dropping one level to the user rather than burning full rounds; continue
+at the lower effort only with explicit approval.
 
 When your runtime caps concurrent subagents, run the round's reviewers in
 waves inside the same round. Coverage stays fixed; only the scheduling bends.
@@ -141,7 +142,7 @@ classify anything.
 | Muse | `subagent_spawn`, one child per reviewer in a single fan-out | `subagent_wait` on every child before classifying |
 | Claude Code | `Task` tool, one call per reviewer, all calls issued together in a single block | every call returns its report; proceed only when all have returned |
 | Codex | `spawn_agent` collaboration subagents; check `list_agents` first and never disturb unrelated agents; unique task names per round (for example `review_r3_correctness`) | wait for every reviewer in the round |
-| Antigravity/Gemini | `invoke_subagent` with `TypeName` self or research and a distinct `Role` per reviewer | one call launches the round concurrently |
+| Antigravity/Gemini | `invoke_subagent` with `TypeName` self or research and a distinct `Role` per reviewer | the call blocks until every reviewer in the round has reported; proceed only when all reports are in |
 | Any other runtime | Sequential fallback: run one review pass per lens yourself, re-reading the diff fresh for each pass so earlier passes never narrow later ones | all passes complete before classifying |
 
 Every reviewer prompt must include:
@@ -180,8 +181,9 @@ defect before classifying.
   unbounded waits, leaks, contract drift, missing coverage).
 
 If **Clean** or **Nitpicks Only**: apply safe nitpicks in one final pass,
-run the full verification gate, run the final pillar sweep (section 6),
-and proceed to Finishing Up.
+run the Step 4 fix check on those edits (a main-agent direct check
+suffices), then the full verification gate, the final pillar sweep
+(section 6), and proceed to Finishing Up.
 
 Treat reviewer disagreement as signal, not noise: if two reviewers
 contradict each other, resolve the conflict against the code before fixing.
@@ -203,8 +205,9 @@ things: each fix addresses its finding; the fix broke none of its own
 preconditions (fast paths that bypass the fixed code, no-op contracts,
 error mappings); every new or changed test is non-vacuous (fails with the
 fix reverted). When the check finds a regression, fix it and repeat this
-step (at most 3 attempts total, then let a full round judge the leftover);
-never launch a full round on a fix known to be broken.
+step (at most 3 attempts total). If the third attempt still shows a
+regression, stop and ask the user how to proceed; never launch a full
+round on a fix known to be broken.
 
 ### Step 5: Verification gate
 

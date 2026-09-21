@@ -63,7 +63,7 @@ Restart the agent (or start a new session) after installing, then invoke:
 
 ```text
 /agent-review-loop [low|medium|high|max]
-/address-pr-comments <pr_number_or_url>
+/address-pr-comments [<pr_number_or_url>]
 ```
 
 Default effort is `high`. The agent-neutral name sits alongside any
