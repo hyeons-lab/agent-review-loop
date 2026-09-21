@@ -25,7 +25,8 @@
 #                     version: targets without the skill are skipped (never
 #                     newly installed), symlinked installs are left alone
 #                     (they follow the canonical copy), and the refinements
-#                     file is never seeded or modified
+#                     file is never seeded or modified; the canonical store
+#                     is always in scope so linked installs refresh for real
 #   --dry-run         print what would change without changing anything
 #   -h, --help        print this help and exit
 #
@@ -44,7 +45,24 @@ skill_files() {
   case "$1" in
     agent-review-loop) printf 'SKILL.md thematic-review-pillars.md agents/openai.yaml\n' ;;
     address-pr-comments) printf 'SKILL.md agents/openai.yaml\n' ;;
+    *) printf 'ERROR: unknown skill: %s\n' "$1" >&2; return 1 ;;
   esac
+}
+
+dest_for_target() {
+  # dest_for_target <skill> <target>: print the install dir for one pair.
+  case "$2" in
+    agents)      printf '%s/%s\n' "${AGENTS_BASE}" "$1" ;;
+    muse)        printf '%s/%s\n' "${MUSE_BASE}" "$1" ;;
+    claude)      printf '%s/%s\n' "${CLAUDE_BASE}" "$1" ;;
+    codex)       printf '%s/%s\n' "${CODEX_BASE}" "$1" ;;
+    antigravity) printf '%s/%s\n' "${ANTIGRAVITY_BASE}" "$1" ;;
+  esac
+}
+
+is_missing() {
+  # is_missing <dest>: true when nothing is installed there (plain or symlink).
+  [ ! -e "$1" ] && [ ! -L "$1" ]
 }
 
 DRY_RUN=0
@@ -105,7 +123,7 @@ install_file() {
 
 install_skill_copy() {
   # install_skill_copy <skill> <dest_dir>
-  local skill="$1" dest="$2" file src
+  local skill="$1" dest="$2" file src files
   src="${SCRIPT_DIR}/skills/${skill}"
   log "==> Skill (copy): ${skill} ${dest}"
   if [ -L "${dest}" ]; then
@@ -122,7 +140,8 @@ install_skill_copy() {
     printf '  FAILED to create directory: %s\n' "${dest}"
     return 1
   fi
-  for file in $(skill_files "${skill}"); do
+  files="$(skill_files "${skill}")" || return 1
+  for file in ${files}; do
     install_file "${src}/${file}" "${dest}/${file}" || return 1
   done
 }
@@ -191,10 +210,14 @@ verify_skill() {
   if [ -L "${dest}" ]; then
     resolved="$(readlink "${dest}")"
   fi
-  if [ -f "${resolved}/SKILL.md" ] && grep -q "^name: ${skill}" "${resolved}/SKILL.md"; then
+  if [ ! -f "${resolved}/SKILL.md" ]; then
+    printf '  MISSING: %s (no SKILL.md; reinstall, or check the link target)\n' "${dest}"
+    return 1
+  fi
+  if grep -q "^name: ${skill}" "${resolved}/SKILL.md"; then
     printf '  ok: %s\n' "${dest}"
   else
-    printf '  MISSING OR INVALID: %s\n' "${dest}"
+    printf '  INVALID: %s (SKILL.md name mismatch; expected %s)\n' "${dest}" "${skill}"
     return 1
   fi
 }
@@ -238,45 +261,52 @@ for skill in ${SKILLS}; do
   fi
 done
 
-# In link mode the canonical copy must exist first.
-if [ "${LINK_MODE}" -eq 1 ]; then
+# In link mode the canonical copy must exist first (never under --upgrade,
+# which ignores --link and pulls the canonical store in itself).
+if [ "${LINK_MODE}" -eq 1 ] && [ "${UPGRADE_MODE}" -eq 0 ]; then
   case " ${TARGETS} " in
     *" agents "*) ;;
     *) TARGETS="agents ${TARGETS}" ;;
   esac
 fi
 
-# Upgrade never changes install type or touches learnings.
+# Upgrade never changes install type or touches learnings, but it always
+# covers the canonical store so linked installs refresh for real (a missing
+# canonical copy is still skipped, never newly installed).
 if [ "${UPGRADE_MODE}" -eq 1 ]; then
   SEED_REFINEMENTS=0
   if [ "${LINK_MODE}" -eq 1 ]; then
     log "note: --upgrade ignores --link (installed types are never changed)"
     LINK_MODE=0
   fi
+  case " ${TARGETS} " in
+    *" agents "*) ;;
+    *) TARGETS="agents ${TARGETS}" ;;
+  esac
 fi
 
 failures=0
 for skill in ${SKILLS}; do
   for target in ${TARGETS}; do
-    case "${target}" in
-      agents)      dest="${AGENTS_BASE}/${skill}" ;;
-      muse)        dest="${MUSE_BASE}/${skill}" ;;
-      claude)      dest="${CLAUDE_BASE}/${skill}" ;;
-      codex)       dest="${CODEX_BASE}/${skill}" ;;
-      antigravity) dest="${ANTIGRAVITY_BASE}/${skill}" ;;
-    esac
+    dest="$(dest_for_target "${skill}" "${target}")"
     if [ "${UPGRADE_MODE}" -eq 1 ]; then
-      if [ ! -e "${dest}" ] && [ ! -L "${dest}" ]; then
-        log "==> Skill (upgrade): ${skill} ${dest}"
-        log "  not installed, skipping (upgrade never installs to new targets)"
+      if is_missing "${dest}"; then
+        reason="not installed, skipping (upgrade never installs to new targets)"
+      elif [ -L "${dest}" ]; then
+        link_target="$(readlink "${dest}")"
+        if [ "${link_target}" != "${AGENTS_BASE}/${skill}" ]; then
+          reason="WARNING: link points at ${link_target}, not the canonical copy; leaving in place"
+        elif [ ! -e "${dest}" ]; then
+          reason="WARNING: linked install dangles (canonical copy missing); leaving in place, verify will flag it"
+        else
+          reason="linked install, follows the canonical copy; leaving in place"
+        fi
+      else
+        install_skill_copy "${skill}" "${dest}" || failures=$((failures + 1))
         continue
       fi
-      if [ -L "${dest}" ]; then
-        log "==> Skill (upgrade): ${skill} ${dest}"
-        log "  linked install, follows the canonical copy; leaving in place"
-        continue
-      fi
-      install_skill_copy "${skill}" "${dest}" || failures=$((failures + 1))
+      log "==> Skill (upgrade): ${skill} ${dest}"
+      log "  ${reason}"
     elif [ "${LINK_MODE}" -eq 1 ] && [ "${target}" != "agents" ]; then
       install_skill_link "${skill}" "${dest}" || failures=$((failures + 1))
     else
@@ -297,14 +327,8 @@ if [ "${DRY_RUN}" -eq 0 ]; then
   log "==> Verify"
   for skill in ${SKILLS}; do
     for target in ${TARGETS}; do
-      case "${target}" in
-        agents)      dest="${AGENTS_BASE}/${skill}" ;;
-        muse)        dest="${MUSE_BASE}/${skill}" ;;
-        claude)      dest="${CLAUDE_BASE}/${skill}" ;;
-        codex)       dest="${CODEX_BASE}/${skill}" ;;
-        antigravity) dest="${ANTIGRAVITY_BASE}/${skill}" ;;
-      esac
-      if [ "${UPGRADE_MODE}" -eq 1 ] && [ ! -e "${dest}" ] && [ ! -L "${dest}" ]; then
+      dest="$(dest_for_target "${skill}" "${target}")"
+      if [ "${UPGRADE_MODE}" -eq 1 ] && is_missing "${dest}"; then
         printf '  not installed, skipped: %s\n' "${dest}"
         continue
       fi

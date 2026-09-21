@@ -4,8 +4,9 @@ Two multi-agent review skills sharing one pillars file: `agent-review-loop`
 reviews the working diff with subagents at a fixed effort (`low`, `medium`,
 `high`, `max`), fixes what they find, and re-reviews until clean, while
 `address-pr-comments` addresses review feedback on a target PR and syncs the
-stack. Both file novel learnings into the shared pillars file after every
-round, so each round reviews against what the previous rounds learned.
+stack. Both file novel learnings as they go (each round, or each fix
+cycle for the PR skill), so later work reviews against what the earlier
+work learned.
 Each skill body runs in **Muse**, **Claude Code**, **Codex**, and
 **Antigravity/Gemini**.
 
@@ -48,13 +49,15 @@ refinements file. Pick targets to install fewer:
 ./install.sh --dry-run               # print what would change; change nothing
 ```
 
+Each flag installs both skills under its directory:
+
 | Flag | Directory |
 |---|---|
-| `--agents` | `~/.agents/skills/agent-review-loop` (canonical store) |
-| `--muse` | `$XDG_CONFIG_HOME/muse/skills/agent-review-loop` (`~/.config` by default) |
-| `--claude` | `~/.claude/skills/agent-review-loop` |
-| `--codex` | `~/.codex/skills/agent-review-loop` |
-| `--antigravity` | `~/.gemini/config/skills/agent-review-loop` |
+| `--agents` | `~/.agents/skills/{agent-review-loop,address-pr-comments}` (canonical store) |
+| `--muse` | `$XDG_CONFIG_HOME/muse/skills/{agent-review-loop,address-pr-comments}` (`~/.config` by default) |
+| `--claude` | `~/.claude/skills/{agent-review-loop,address-pr-comments}` |
+| `--codex` | `~/.codex/skills/{agent-review-loop,address-pr-comments}` |
+| `--antigravity` | `~/.gemini/config/skills/{agent-review-loop,address-pr-comments}` |
 
 Restart the agent (or start a new session) after installing, then invoke:
 
@@ -77,10 +80,13 @@ git pull
 `--upgrade` refreshes every already-installed skill to the checked-out
 version and verifies the result. It never installs to new locations,
 never replaces symlinked installs, and never seeds or modifies
-`~/.agents/review-refinements.md`, so accumulated learnings survive. Plain
-`./install.sh` also preserves learnings but installs to every target; use
-`--upgrade` for a refresh only. Run with `--dry-run` first to preview what
-would change.
+`~/.agents/review-refinements.md`, so accumulated learnings survive.
+`--upgrade` ignores `--link`, always covers the canonical store so linked
+installs refresh for real, and never adds a skill that is not already
+installed: upgrading from a single-skill install needs one plain
+`./install.sh` first to pick up new skills. Plain `./install.sh` also
+preserves learnings but installs to every target; use `--upgrade` for a
+refresh only. Run with `--dry-run` first to preview what would change.
 
 ## The Shared Pillars File
 
@@ -123,7 +129,7 @@ accumulate in the canonical file.
 
 ```bash
 rm -rf ~/.agents/skills/agent-review-loop ~/.agents/skills/address-pr-comments \
-  ~/.config/muse/skills/agent-review-loop ~/.config/muse/skills/address-pr-comments \
+  "${XDG_CONFIG_HOME:-$HOME/.config}/muse/skills/agent-review-loop" "${XDG_CONFIG_HOME:-$HOME/.config}/muse/skills/address-pr-comments" \
   ~/.claude/skills/agent-review-loop ~/.claude/skills/address-pr-comments \
   ~/.codex/skills/agent-review-loop ~/.codex/skills/address-pr-comments \
   ~/.gemini/config/skills/agent-review-loop ~/.gemini/config/skills/address-pr-comments

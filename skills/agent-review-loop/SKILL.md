@@ -23,9 +23,10 @@ that same table.
 
 1. **Zero AI attribution**: never attribute yourself or any AI assistant in
    commits, PR descriptions, code comments, docstrings, or prose.
-2. **Punctuation**: never write an em dash (U+2014) or lookalikes (`--` or
-   spaced hyphens) in anything you write. Use colons, commas, semicolons,
-   parentheses, or separate sentences.
+2. **Punctuation**: never write an em dash (U+2014), and never use `--`
+   or spaced hyphens as punctuation in prose. `--` stays allowed in
+   command flags, code, and quoted output. In prose, use colons, commas,
+   semicolons, parentheses, or separate sentences.
 3. **Commit invariants**:
    - Only commit at the end of the entire loop, after reaching a clean review
      or nitpicks-only state.
@@ -55,9 +56,11 @@ Default is **`high`**.
 - **`max`**: exhaustive audit, one reviewer per pillar (8 parallel), with a
   second synthesis reviewer reconciling overlaps before you see the report.
 
-The chosen effort is **fixed for the entire loop**. Every round runs at the
-same effort and fan-out. Never escalate or de-escalate between rounds. An
-unknown argument counts as no effort given: use the default and say so.
+The chosen effort is **fixed for the entire loop** except for the
+user-approved quiet-round step-down below. Every round runs at the same
+effort and fan-out. Never escalate, and never de-escalate except through
+that step-down. An unknown argument counts as no effort given: use the
+default and say so.
 
 Choose the effort from the diff, not from habit: unfamiliar code, large
 diffs, or security-sensitive areas earn `max`; small follow-ups on a
@@ -200,7 +203,8 @@ things: each fix addresses its finding; the fix broke none of its own
 preconditions (fast paths that bypass the fixed code, no-op contracts,
 error mappings); every new or changed test is non-vacuous (fails with the
 fix reverted). When the check finds a regression, fix it and repeat this
-step; never launch a full round on a fix known to be broken.
+step (at most 3 attempts total, then let a full round judge the leftover);
+never launch a full round on a fix known to be broken.
 
 ### Step 5: Verification gate
 

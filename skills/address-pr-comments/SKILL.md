@@ -20,9 +20,10 @@ pillars plus the evolving shared learnings file.
 
 1. **Zero AI attribution**: never attribute yourself or any AI assistant in
    commits, PR descriptions, code comments, docstrings, or prose.
-2. **Punctuation**: never write an em dash (U+2014) or lookalikes (`--` or
-   spaced hyphens) in anything you write. Use colons, commas, semicolons,
-   parentheses, or separate sentences.
+2. **Punctuation**: never write an em dash (U+2014), and never use `--`
+   or spaced hyphens as punctuation in prose. `--` stays allowed in
+   command flags, code, and quoted output. In prose, use colons, commas,
+   semicolons, parentheses, or separate sentences.
 3. **Commit and push rules**:
    - Follow the repository's own commit convention (repo docs win over any
      default; never add attribution or trailer lines).
@@ -44,14 +45,16 @@ flowchart TD
     D --> E[Thematic synthesis: generalize the shared pillars]
     E --> F[Commit, cascade-rebase the stack & submit]
     F --> G[Cancel superseded CI runs & verify checks]
-    G -->|"checks red"| C
+    G -->|"checks red"| A
 ```
 
 ## Prerequisites
 
 `gh` and `jq` must be on `PATH`. When they are installed but not found
 (for example a macOS Homebrew install outside the inherited `PATH`),
-prefix the commands below with `export PATH="/opt/homebrew/bin:$PATH"`.
+prefix the commands below with
+`export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"` (Apple Silicon,
+then Intel Mac; Linuxbrew users add `$(brew --prefix)/bin` instead).
 
 The skill takes a target PR number or URL. When omitted, use the open PR
 for the current branch and stop when there is not exactly one. If the work
@@ -80,7 +83,8 @@ gh api /repos/{owner}/{repo}/issues/<pr_number>/comments \
 ### B. Categorize the findings
 
 File every finding under one of the 8 Core Thematic Pillars (titles are
-exact; the bundled base pillars file defines them):
+exact; the sibling `agent-review-loop` skill's base pillars file defines
+them):
 
 1. Low-Level Safety, Alignment & Buffer Invariants
 2. Concurrency, Cancellation & State Machine Lifecycles
@@ -211,19 +215,21 @@ Rules:
      git push -u origin HEAD:refs/heads/<type>/<branch-name>
      ```
 3. **Cancel superseded CI runs.** Every push queues a build; cancel runs
-   whose head SHA is no longer the tip of any open PR:
+   on this PR's branch whose head SHA is no longer the tip:
    ```bash
-   current=$(gh pr list --author @me --state open --json headRefOid --jq '.[].headRefOid')
-   [ -z "$current" ] && { echo "no open PRs; refusing to cancel"; exit 1; }
+   branch=$(gh pr view <pr_number> --json headRefName --jq .headRefName) || { echo "ERROR: gh pr view failed; refusing to cancel"; exit 1; }
+   tip=$(gh pr view <pr_number> --json headRefOid --jq .headRefOid) || { echo "ERROR: gh pr view failed; refusing to cancel"; exit 1; }
+   [ -z "$tip" ] && { echo "no tip SHA; refusing to cancel"; exit 1; }
    for status in queued in_progress; do
-     gh api --paginate "/repos/{owner}/{repo}/actions/runs?status=$status" \
+     gh api --paginate "/repos/{owner}/{repo}/actions/runs?branch=$branch&status=$status" \
        --jq '.workflow_runs[] | "\(.id) \(.head_sha)"' \
      | while read -r id sha; do
-         grep -q "$sha" <<<"$current" || gh run cancel "$id"
+         [ "$sha" = "$tip" ] || gh run cancel "$id"
        done
    done
    ```
-   The guard matters: an empty SHA set would cancel every running job.
+   The guards matter: a failed lookup or an empty tip must never widen
+   into cancelling other branches' runs.
 4. **Resolve addressed review threads** via GraphQL, once the fix is
    pushed:
    ```bash

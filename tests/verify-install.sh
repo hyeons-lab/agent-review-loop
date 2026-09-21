@@ -8,12 +8,17 @@ FAKE="${TMPDIR:-/tmp}/arl-test-home"
 rm -rf "${FAKE}"
 mkdir -p "${FAKE}"
 export HOME="${FAKE}"
+export XDG_CONFIG_HOME="${FAKE}/.config"
 
 pass=0; fail=0
 check() { # check <desc> <command...>
   local desc="$1"; shift
   if "$@" >/dev/null 2>&1; then echo "PASS: ${desc}"; pass=$((pass+1));
   else echo "FAIL: ${desc}"; fail=$((fail+1)); fi
+}
+fresh_fake() { # reset the fake home between sections
+  rm -rf "${FAKE}"
+  mkdir -p "${FAKE}"
 }
 
 echo "--- 0. syntax ---"
@@ -58,17 +63,16 @@ check "canonical seeded" grep -q "Shared Review Refinements" "${FAKE}/.agents/re
 check "legacy note printed" grep -q "legacy" /tmp/rfl-run4.log
 
 echo "--- 5. selective install ---"
-rm -rf "${FAKE}"
-mkdir -p "${FAKE}"
+fresh_fake
 HOME="${FAKE}" "${BUNDLE}/install.sh" --claude --no-refinements > /tmp/rfl-run5.log 2>&1
 check "claude installed" test -f "${FAKE}/.claude/skills/agent-review-loop/SKILL.md"
 check "second skill installed" test -f "${FAKE}/.claude/skills/address-pr-comments/SKILL.md"
 check "codex absent" test ! -e "${FAKE}/.codex/skills/agent-review-loop"
+check "second skill absent" test ! -e "${FAKE}/.codex/skills/address-pr-comments"
 check "refinements skipped" test ! -e "${FAKE}/.agents/review-refinements.md"
 
 echo "--- 6. link mode + converge ---"
-rm -rf "${FAKE}"
-mkdir -p "${FAKE}"
+fresh_fake
 HOME="${FAKE}" "${BUNDLE}/install.sh" --link > /tmp/rfl-run6.log 2>&1
 for s in agent-review-loop address-pr-comments; do
   check "canonical is real dir: $s" test -f "${FAKE}/.agents/skills/$s/SKILL.md"
@@ -84,8 +88,7 @@ for s in agent-review-loop address-pr-comments; do
 done
 
 echo "--- 7. dry-run changes nothing ---"
-rm -rf "${FAKE}"
-mkdir -p "${FAKE}"
+fresh_fake
 HOME="${FAKE}" "${BUNDLE}/install.sh" --dry-run > /tmp/rfl-run7.log 2>&1
 check "dry-run empty home" test -z "$(ls -A "${FAKE}")"
 
@@ -94,15 +97,19 @@ if grep -r "—" "${BUNDLE}" --exclude-dir=tests >/dev/null 2>&1; then echo "FAI
 else echo "PASS: no em dashes"; pass=$((pass+1)); fi
 
 echo "--- 9. upgrade refreshes skills, keeps learnings, skips missing ---"
-rm -rf "${FAKE}"
-mkdir -p "${FAKE}"
+fresh_fake
 HOME="${FAKE}" "${BUNDLE}/install.sh" --claude > /tmp/rfl-run9a.log 2>&1
 echo "- **Marker**: upgrade bullet" >> "${FAKE}/.agents/review-refinements.md"
-echo "stale" >> "${FAKE}/.claude/skills/agent-review-loop/SKILL.md"
+cp "${FAKE}/.agents/review-refinements.md" /tmp/rfl-before.md
+for s in agent-review-loop address-pr-comments; do
+  echo "stale" >> "${FAKE}/.claude/skills/$s/SKILL.md"
+done
 HOME="${FAKE}" "${BUNDLE}/install.sh" --upgrade > /tmp/rfl-run9b.log 2>&1
-check "upgrade refreshes stale skill" cmp -s "${BUNDLE}/skills/agent-review-loop/SKILL.md" "${FAKE}/.claude/skills/agent-review-loop/SKILL.md"
-check "upgrade keeps marker" grep -q "Marker" "${FAKE}/.agents/review-refinements.md"
-check "upgrade skips missing target" test ! -e "${FAKE}/.codex/skills/agent-review-loop"
+for s in agent-review-loop address-pr-comments; do
+  check "upgrade refreshes stale skill: $s" cmp -s "${BUNDLE}/skills/$s/SKILL.md" "${FAKE}/.claude/skills/$s/SKILL.md"
+  check "upgrade skips missing target: $s" test ! -e "${FAKE}/.codex/skills/$s"
+done
+check "upgrade leaves refinements byte-identical" cmp -s /tmp/rfl-before.md "${FAKE}/.agents/review-refinements.md"
 check "upgrade reports skip" grep -q "not installed, skipping" /tmp/rfl-run9b.log
 check "upgrade leaves refinements alone" grep -q "left untouched" /tmp/rfl-run9b.log
 rm "${FAKE}/.agents/review-refinements.md"
@@ -110,14 +117,30 @@ HOME="${FAKE}" "${BUNDLE}/install.sh" --upgrade > /tmp/rfl-run9c.log 2>&1
 check "upgrade never seeds refinements" test ! -e "${FAKE}/.agents/review-refinements.md"
 
 echo "--- 10. upgrade respects linked installs ---"
-rm -rf "${FAKE}"
-mkdir -p "${FAKE}"
+fresh_fake
 HOME="${FAKE}" "${BUNDLE}/install.sh" --link > /tmp/rfl-run10a.log 2>&1
-echo "stale" >> "${FAKE}/.agents/skills/agent-review-loop/SKILL.md"
+for s in agent-review-loop address-pr-comments; do
+  echo "stale" >> "${FAKE}/.agents/skills/$s/SKILL.md"
+done
 HOME="${FAKE}" "${BUNDLE}/install.sh" --upgrade > /tmp/rfl-run10b.log 2>&1
-check "upgrade refreshes canonical" cmp -s "${BUNDLE}/skills/agent-review-loop/SKILL.md" "${FAKE}/.agents/skills/agent-review-loop/SKILL.md"
-check "upgrade leaves symlink" test -L "${FAKE}/.claude/skills/agent-review-loop"
+for s in agent-review-loop address-pr-comments; do
+  check "upgrade refreshes canonical: $s" cmp -s "${BUNDLE}/skills/$s/SKILL.md" "${FAKE}/.agents/skills/$s/SKILL.md"
+  check "upgrade leaves symlink: $s" test -L "${FAKE}/.claude/skills/$s"
+done
 check "upgrade reports link kept" grep -q "leaving in place" /tmp/rfl-run10b.log
+
+echo "--- 11. upgrade ignores link flag ---"
+fresh_fake
+HOME="${FAKE}" "${BUNDLE}/install.sh" --claude > /tmp/rfl-run11a.log 2>&1
+HOME="${FAKE}" "${BUNDLE}/install.sh" --upgrade --claude > /tmp/rfl-run11b.log 2>&1
+fresh_fake
+HOME="${FAKE}" "${BUNDLE}/install.sh" --claude > /tmp/rfl-run11d.log 2>&1
+HOME="${FAKE}" "${BUNDLE}/install.sh" --upgrade --link --claude > /tmp/rfl-run11c.log 2>&1
+check "upgrade ignores link note" grep -q "ignores --link" /tmp/rfl-run11c.log
+check "link flag changes nothing under upgrade" cmp -s /tmp/rfl-run11b.log <(grep -v "ignores --link" /tmp/rfl-run11c.log)
+check "upgrade covers canonical scope" grep -q ".agents/skills" /tmp/rfl-run11b.log
+check "upgrade adds no new targets" test ! -e "${FAKE}/.codex/skills/agent-review-loop"
+check "upgrade keeps copy type" test ! -L "${FAKE}/.claude/skills/agent-review-loop"
 
 echo
 echo "RESULT: ${pass} passed, ${fail} failed"
