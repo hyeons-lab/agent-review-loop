@@ -9,6 +9,7 @@
 - 2026-09-21T17:08-07:00 Make legacy refinements opt-in via REVIEW_REFINEMENTS_LEGACY=1: The 322-line legacy file contains project-specific Rust/GPU/inference bullets that add noise to non-inference projects; default to skipping it unless explicitly requested.
 - 2026-09-21T17:08-07:00 Seed 8 domain-neutral bullets in canonical refinements: Populate one high-signal, stack-agnostic principle per pillar in `~/.agents/review-refinements.md` and the starter template, keeping the existing Pillar 6 license attribution bullet intact.
 - 2026-09-21T17:37-07:00 Adopt canonical software engineering review pillars: Completely replace legacy systems/inference pillar categories with 8 universal software engineering pillars (Correctness, Security, Concurrency, Error Handling, API Design, Performance, Simplicity, Testing/Observability).
+- 2026-09-21T17:46-07:00 Align agent-review-report with canonical SWE pillars: Harmonized the incorporated report skill with the 8 canonical software engineering review pillars and legacy opt-in semantics.
 
 ## What Changed
 
@@ -25,10 +26,20 @@
 - 2026-09-21T17:37-07:00 `README.md`: Updated pillar descriptions to reference the canonical software engineering pillars.
 - 2026-09-21T17:37-07:00 `templates/review-refinements.template.md`: Updated template headers and starter bullets to canonical software engineering pillars.
 - 2026-09-21T17:37-07:00 `devlog/plans/000001-01-generalize-review-criteria.md`: Appended note on transition to canonical SWE pillars.
+- 2026-09-21T17:46-07:00 `devlog/plans/000001-02-incorporate-agent-review-report.md`: Plan for incorporating agent-review-report skill into PR 2.
+- 2026-09-21T17:46-07:00 `skills/agent-review-report/agents/openai.yaml`: Added Codex metadata for agent-review-report skill.
+- 2026-09-21T17:46-07:00 `skills/agent-review-report/SKILL.md`: Added agent-review-report skill definition adapted to canonical SWE review pillars and REVIEW_REFINEMENTS_LEGACY=1 opt-in.
+- 2026-09-21T17:46-07:00 `install.sh`: Added agent-review-report to SKILLS, skill_files, and completion message.
+- 2026-09-21T17:46-07:00 `tests/verify-install.sh`: Added agent-review-report to verification suite across all test sections.
+- 2026-09-21T17:46-07:00 `README.md`: Updated description, contents, install tables, uninstall paths, and manual install steps for 3 skills.
+- 2026-09-21T17:46-07:00 `skills/address-pr-comments/SKILL.md`: Updated cross-skill refinements reference.
+- 2026-09-21T17:46-07:00 `skills/agent-review-loop/SKILL.md`: Added mirroring sync note with agent-review-report.
+- 2026-09-21T17:46-07:00 `skills/agent-review-loop/thematic-review-pillars.md`: Updated skill name list in document header.
 
 ## Issues
 
 ## Commits
 
 - c897bc9: feat: generalize review criteria across repositories and stacks
-- HEAD: refactor: adopt canonical software engineering review pillars
+- cddbd79: refactor: adopt canonical software engineering review pillars
+- HEAD: feat: incorporate agent-review-report skill

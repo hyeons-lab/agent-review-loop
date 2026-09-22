@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Install the agent skills (agent-review-loop, address-pr-comments)
-# for Muse, Claude Code, Codex, and Antigravity/Gemini, and seed the
-# shared refinements file.
+# Install the agent skills (agent-review-loop, agent-review-report,
+# address-pr-comments) for Muse, Claude Code, Codex, and
+# Antigravity/Gemini, and seed the shared refinements file.
 #
 # Idempotent: re-running changes nothing when everything is current, and it
 # never overwrites the shared refinements file once it exists.
@@ -27,13 +27,14 @@
 #                     (they follow the canonical copy), and the refinements
 #                     file is never seeded or modified; the canonical store
 #                     is always in scope so linked installs refresh for real
+#                     (it is seeded only by a plain install, never by --upgrade)
 #   --dry-run         print what would change without changing anything
 #   -h, --help        print this help and exit
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SKILLS="agent-review-loop address-pr-comments"
+SKILLS="agent-review-loop agent-review-report address-pr-comments"
 TEMPLATE_SRC="${SCRIPT_DIR}/templates/review-refinements.template.md"
 
 CANONICAL_SKILLS_DIR="${HOME}/.agents/skills"
@@ -44,7 +45,7 @@ skill_files() {
   # skill_files <skill>: print the bundled files that make up one skill.
   case "$1" in
     agent-review-loop) printf 'SKILL.md thematic-review-pillars.md agents/openai.yaml\n' ;;
-    address-pr-comments) printf 'SKILL.md agents/openai.yaml\n' ;;
+    agent-review-report|address-pr-comments) printf 'SKILL.md agents/openai.yaml\n' ;;
     *) printf 'ERROR: unknown skill: %s\n' "$1" >&2; return 1 ;;
   esac
 }
@@ -354,4 +355,4 @@ if [ "${failures}" -gt 0 ]; then
   log "Completed with ${failures} problem(s)."
   exit 1
 fi
-log "Done. Invoke with /agent-review-loop [low|medium|high|max] or /address-pr-comments <pr> in any supported agent."
+log "Done. Invoke with /agent-review-loop [low|medium|high|max], /agent-review-report [pr], or /address-pr-comments <pr> in any supported agent."

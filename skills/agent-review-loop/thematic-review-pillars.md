@@ -2,8 +2,8 @@
 
 This document defines the **8 Core Thematic Pillars** (the defaults) and the
 **self-improvement protocol** shared by every review loop that files
-learnings into the refinements file (`review-fix-loop` in any runtime,
-`review-and-report`, and `address-pr-comments`).
+learnings into the refinements file (`agent-review-loop`,
+`agent-review-report`, and `address-pr-comments`).
 
 It travels with the skill and stays stable. Automated learning never edits
 this file; it writes to the Tier 2 file instead.

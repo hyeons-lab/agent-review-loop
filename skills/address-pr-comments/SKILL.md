@@ -162,7 +162,7 @@ immediately. Later cycles in the same run read what earlier cycles filed,
 so the same class of miss is caught locally the second time.
 
 When CI catches something local review missed, file the lesson in the
-shared refinements file both skills read. Resolution order for reading
+shared refinements file every skill reads. Resolution order for reading
 (the more specific file wins a direct conflict):
 
 - `$REVIEW_REFINEMENTS_FILE` when set (explicit override).

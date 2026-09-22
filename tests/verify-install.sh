@@ -9,7 +9,7 @@ rm -rf "${FAKE}"
 mkdir -p "${FAKE}"
 export HOME="${FAKE}"
 export XDG_CONFIG_HOME="${FAKE}/.config"
-SKILLS="agent-review-loop address-pr-comments"
+SKILLS="agent-review-loop agent-review-report address-pr-comments"
 
 pass=0; fail=0
 check() { # check <desc> <command...>
@@ -67,10 +67,10 @@ check "legacy opt-in mentioned" grep -q "REVIEW_REFINEMENTS_LEGACY=1" /tmp/rfl-r
 echo "--- 5. selective install ---"
 fresh_fake
 "${BUNDLE}/install.sh" --claude --no-refinements > /tmp/rfl-run5.log 2>&1
-check "claude installed" test -f "${FAKE}/.claude/skills/agent-review-loop/SKILL.md"
-check "second skill installed" test -f "${FAKE}/.claude/skills/address-pr-comments/SKILL.md"
-check "codex absent" test ! -e "${FAKE}/.codex/skills/agent-review-loop"
-check "second skill absent" test ! -e "${FAKE}/.codex/skills/address-pr-comments"
+for s in ${SKILLS}; do
+  check "selective install present: $s" test -f "${FAKE}/.claude/skills/$s/SKILL.md"
+  check "selective install absent: $s" test ! -e "${FAKE}/.codex/skills/$s"
+done
 check "refinements skipped" test ! -e "${FAKE}/.agents/review-refinements.md"
 
 echo "--- 6. link mode + converge ---"

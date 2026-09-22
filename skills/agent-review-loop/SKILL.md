@@ -141,6 +141,7 @@ default timeout, re-prompt it once; if still silent, proceed with the
 reports in hand, note the missing lens in the round summary, and treat
 its pillars as uncovered next round.
 
+<!-- Mirrored with skills/agent-review-report/SKILL.md: keep runtime rows in sync. -->
 | Runtime | How to spawn one reviewer per lens | How to collect |
 |---|---|---|
 | Muse | `subagent_spawn`, one child per reviewer in a single fan-out | `subagent_wait` on every child before classifying |
