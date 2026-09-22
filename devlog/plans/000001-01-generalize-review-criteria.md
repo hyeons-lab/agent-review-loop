@@ -44,3 +44,17 @@ To solve this:
    - Run `./tests/verify-install.sh` and ensure 100% pass rate.
    - Check bundle prose for any stray em dashes.
    - Update devlog with all changes, commits, and decisions.
+
+## Canonical SWE Pillars Transition
+
+User decided to fully replace the legacy inference engine / triage systems pillar categories with the 8 canonical software engineering review pillars:
+1. Functional Correctness, Logic & Edge Cases
+2. Security, Authentication & Input Sanitization
+3. Concurrency, Asynchrony & Lifecycle Management
+4. Error Handling, Resilience & Diagnostics
+5. Interface Contracts, API Design & Compatibility
+6. Performance, Resource Efficiency & Scalability
+7. Code Simplification, Clean Architecture & Maintainability
+8. Testing, Observability & Verification Invariants
+
+Updated `thematic-review-pillars.md`, `SKILL.md`, `README.md`, `templates/review-refinements.template.md`, and `~/.agents/review-refinements.md`.

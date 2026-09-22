@@ -90,9 +90,9 @@ refresh only. Run with `--dry-run` first to preview what would change.
 
 ## The Shared Pillars File
 
-Loops file learnings under 8 fixed pillars (low-level safety, concurrency,
-error propagation, portability, numerical robustness, pipeline completeness,
-performance, simplification). Resolution order:
+Loops file learnings under 8 fixed pillars (functional correctness,
+security, concurrency, error handling, interface contracts, performance, code
+simplification, and testing/observability). Resolution order:
 
 1. `$REVIEW_REFINEMENTS_FILE` when set (explicit override).
 2. Repo-local `.agents/review-refinements.md` (project specific; additive).

@@ -126,14 +126,14 @@ before proceeding. Each reviewer audits the filtered diff plus the
 surrounding source it needs (callers, types, tests, configs) against the
 **8 Core Thematic Pillars**:
 
-1. Low-Level Safety, Alignment & Buffer Invariants
-2. Concurrency, Cancellation & State Machine Lifecycles
-3. Error Propagation, Diagnostics & No-Panic Invariants
-4. Multiplatform Portability & Cross-Binding Drift
-5. Numerical Robustness & Boundary Validation
-6. Pipeline Completeness & Contract Faithfulness
-7. Performance, SIMD & Resource Efficiency
-8. Code Simplification, Cleanup & Complexity Reduction
+1. Functional Correctness, Logic & Edge Cases
+2. Security, Authentication & Input Sanitization
+3. Concurrency, Asynchrony & Lifecycle Management
+4. Error Handling, Resilience & Diagnostics
+5. Interface Contracts, API Design & Compatibility
+6. Performance, Resource Efficiency & Scalability
+7. Code Simplification, Clean Architecture & Maintainability
+8. Testing, Observability & Verification Invariants
 
 Use your runtime's row. Every reviewer in the round reports before you
 classify anything. If a reviewer has not reported within the runtime
