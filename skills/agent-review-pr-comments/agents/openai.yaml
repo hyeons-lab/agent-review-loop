@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Review PR Comments"
+  short_description: "Fix PR review feedback and sync the stack"
+  default_prompt: "Use $agent-review-pr-comments to address the review comments on the target PR."

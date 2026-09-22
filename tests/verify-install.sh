@@ -5,8 +5,9 @@ set -euo pipefail
 BUNDLE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/arl-verify-XXXXXX")"
 cleanup() {
-  if [ "${fail:-0}" -gt 0 ]; then
-    echo "Verification failed (${fail} failure(s)). Retaining diagnostic logs in: ${LOG_DIR}"
+  local exit_code=$?
+  if [ "${exit_code}" -ne 0 ] || [ "${fail:-0}" -gt 0 ]; then
+    echo "Verification failed (exit code ${exit_code}, ${fail} failure(s)). Retaining diagnostic logs in: ${LOG_DIR}"
   else
     rm -rf "${TEST_DIR}"
   fi
@@ -20,7 +21,7 @@ mkdir -p "${FAKE}" "${LOG_DIR}"
 
 export HOME="${FAKE}"
 export XDG_CONFIG_HOME="${FAKE}/.config"
-SKILLS="agent-review-loop agent-review-report address-pr-comments"
+SKILLS="agent-review-loop agent-review-report agent-review-pr-comments"
 
 pass=0; fail=0
 check() { # check <desc> <command...>
@@ -44,15 +45,19 @@ run_install() { # run_install <logfile> [args...]
     return 1
   fi
 }
+is_missing() { # is_missing <path>: true when path does not exist and is not a dangling symlink
+  [ ! -e "$1" ] && [ ! -L "$1" ]
+}
 fresh_fake() { # reset the fake home between sections
   rm -rf "${FAKE}"
   mkdir -p "${FAKE}"
 }
 
 echo "--- 0. syntax ---"
-check "bash -n" bash -n "${BUNDLE}/install.sh"
+check "bash -n install.sh" bash -n "${BUNDLE}/install.sh"
+check "bash -n verify-install.sh" bash -n "${BUNDLE}/tests/verify-install.sh"
 if command -v shellcheck >/dev/null; then
-  if shellcheck -S warning "${BUNDLE}/install.sh"; then
+  if shellcheck -S warning "${BUNDLE}/install.sh" "${BUNDLE}/tests/verify-install.sh"; then
     echo "PASS: shellcheck"
     pass=$((pass+1))
   else
@@ -75,7 +80,7 @@ for d in .agents/skills .config/muse/skills .claude/skills .codex/skills .gemini
 done
 check "refinements seeded" test -f "${FAKE}/.agents/review-refinements.md"
 check "seed has 8 pillars" test "$(grep -c '^### Pillar' "${FAKE}/.agents/review-refinements.md")" = "8"
-check "installed files readable by non-owner" test -z "$(find "${FAKE}" -name "*.md" ! -perm -0444)"
+check "installed files readable by non-owner" test -z "$(find "${FAKE}" -type f ! -perm -0444)"
 
 echo "--- 2. re-run is fully unchanged ---"
 check "re-run full install" run_install "${LOG_DIR}/rfl-run2.log"
@@ -140,10 +145,11 @@ check "populated dry-run has no pending changes" test "$(grep -c "\[dry-run\]" "
 
 echo "--- 8. no em dashes in bundle prose ---"
 em_rc=0
-grep -r "—" "${BUNDLE}" --exclude-dir=tests --exclude-dir=.git --exclude-dir=worktrees >/dev/null 2>&1 || em_rc=$?
+EM_DASH="$(printf '\xe2\x80\x94')"
+grep -r "${EM_DASH}" "${BUNDLE}" --exclude-dir=.git --exclude-dir=worktrees >/dev/null 2>&1 || em_rc=$?
 if [ "${em_rc}" -eq 0 ]; then
   echo "FAIL: em dash found"
-  grep -rn "—" "${BUNDLE}" --exclude-dir=tests --exclude-dir=.git --exclude-dir=worktrees
+  grep -rn "${EM_DASH}" "${BUNDLE}" --exclude-dir=.git --exclude-dir=worktrees
   fail=$((fail+1))
 elif [ "${em_rc}" -eq 1 ]; then
   echo "PASS: no em dashes"
@@ -172,11 +178,53 @@ for s in ${SKILLS}; do
   check "upgrade never installs missing canonical: $s" test ! -e "${FAKE}/.agents/skills/$s"
 done
 check "upgrade leaves refinements alone" grep -q "left untouched" "${LOG_DIR}/rfl-run9b.log"
-rm -rf "${FAKE}/.claude/skills/address-pr-comments"
+rm -rf "${FAKE}/.claude/skills/agent-review-pr-comments"
 check "upgrade with skill removed" run_install "${LOG_DIR}/rfl-run9d.log" --upgrade --claude
-check "upgrade adds no new skill" test ! -e "${FAKE}/.claude/skills/address-pr-comments"
+check "upgrade adds no new skill" test ! -e "${FAKE}/.claude/skills/agent-review-pr-comments"
 check "upgrade keeps loop skill" test -f "${FAKE}/.claude/skills/agent-review-loop/SKILL.md"
 check "upgrade keeps report skill" test -f "${FAKE}/.claude/skills/agent-review-report/SKILL.md"
+# Verify legacy skill migration under upgrade
+mkdir -p "${FAKE}/.claude/skills/address-pr-comments/agents"
+echo "stale legacy" > "${FAKE}/.claude/skills/address-pr-comments/SKILL.md"
+echo "stale yaml" > "${FAKE}/.claude/skills/address-pr-comments/agents/openai.yaml"
+check "upgrade legacy skill" run_install "${LOG_DIR}/rfl-run9-legacy.log" --upgrade --claude
+check "legacy skill migrated to new name" test -f "${FAKE}/.claude/skills/agent-review-pr-comments/SKILL.md"
+check "legacy skill updated to current content" cmp -s "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" "${FAKE}/.claude/skills/agent-review-pr-comments/SKILL.md"
+check "legacy skill yaml updated to current content" cmp -s "${BUNDLE}/skills/agent-review-pr-comments/agents/openai.yaml" "${FAKE}/.claude/skills/agent-review-pr-comments/agents/openai.yaml"
+check "legacy skill old directory removed" is_missing "${FAKE}/.claude/skills/address-pr-comments"
+
+# Verify legacy skill migration for symlink installs under upgrade
+mkdir -p "${FAKE}/.agents/skills/agent-review-pr-comments/agents"
+cp "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" "${FAKE}/.agents/skills/agent-review-pr-comments/"
+cp "${BUNDLE}/skills/agent-review-pr-comments/agents/openai.yaml" "${FAKE}/.agents/skills/agent-review-pr-comments/agents/"
+rm -rf "${FAKE}/.claude/skills/agent-review-pr-comments"
+ln -s "${FAKE}/.agents/skills/address-pr-comments" "${FAKE}/.claude/skills/address-pr-comments"
+check "upgrade legacy symlink skill" run_install "${LOG_DIR}/rfl-run9-legacy-symlink.log" --upgrade --claude
+check "legacy symlink migrated to new canonical" test -L "${FAKE}/.claude/skills/agent-review-pr-comments"
+check "legacy symlink points to new canonical" test "$(readlink "${FAKE}/.claude/skills/agent-review-pr-comments")" = "${FAKE}/.agents/skills/agent-review-pr-comments"
+check "legacy symlink resolves to skill file" test -f "${FAKE}/.claude/skills/agent-review-pr-comments/SKILL.md"
+check "legacy symlink resolves to yaml metadata" test -f "${FAKE}/.claude/skills/agent-review-pr-comments/agents/openai.yaml"
+check "legacy symlink old link removed" is_missing "${FAKE}/.claude/skills/address-pr-comments"
+
+# Verify dry-run plans cleanup of obsolete legacy skill without modifying disk
+mkdir -p "${FAKE}/.claude/skills/address-pr-comments"
+echo "obsolete" > "${FAKE}/.claude/skills/address-pr-comments/SKILL.md"
+check "dry-run reports obsolete legacy skill cleanup" run_install "${LOG_DIR}/rfl-dry-run-cleanup.log" --dry-run --claude
+check "dry-run plans obsolete skill removal" grep -q "clean up obsolete skill: ${FAKE}/.claude/skills/address-pr-comments" "${LOG_DIR}/rfl-dry-run-cleanup.log"
+check "dry-run leaves obsolete legacy skill untouched" test "$(< "${FAKE}/.claude/skills/address-pr-comments/SKILL.md")" = "obsolete"
+
+# Verify dry-run plans migration of legacy skill under upgrade without modifying disk
+rm -rf "${FAKE}/.claude/skills/agent-review-pr-comments"
+check "dry-run reports legacy skill migration under upgrade" run_install "${LOG_DIR}/rfl-dry-run-upgrade.log" --dry-run --upgrade --claude
+check "dry-run plans legacy skill migration" grep -q "migrate legacy skill: ${FAKE}/.claude/skills/address-pr-comments -> ${FAKE}/.claude/skills/agent-review-pr-comments" "${LOG_DIR}/rfl-dry-run-upgrade.log"
+check "dry-run upgrade leaves legacy skill untouched" test "$(< "${FAKE}/.claude/skills/address-pr-comments/SKILL.md")" = "obsolete"
+check "dry-run upgrade leaves destination uncreated" is_missing "${FAKE}/.claude/skills/agent-review-pr-comments"
+
+# Verify fresh install cleans up obsolete legacy skill
+check "fresh install cleans up obsolete legacy skill" run_install "${LOG_DIR}/rfl-fresh-cleanup.log" --claude
+check "obsolete legacy skill removed on fresh install" is_missing "${FAKE}/.claude/skills/address-pr-comments"
+check "fresh install installs renamed skill" cmp -s "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" "${FAKE}/.claude/skills/agent-review-pr-comments/SKILL.md"
+check "fresh install installs subordinate metadata" cmp -s "${BUNDLE}/skills/agent-review-pr-comments/agents/openai.yaml" "${FAKE}/.claude/skills/agent-review-pr-comments/agents/openai.yaml"
 rm "${FAKE}/.agents/review-refinements.md"
 check "upgrade without refinements file" run_install "${LOG_DIR}/rfl-run9c.log" --upgrade
 check "upgrade never seeds refinements" test ! -e "${FAKE}/.agents/review-refinements.md"
@@ -191,6 +239,7 @@ check "upgrade linked install" run_install "${LOG_DIR}/rfl-run10b.log" --upgrade
 for s in ${SKILLS}; do
   check "upgrade refreshes canonical: $s" cmp -s "${BUNDLE}/skills/$s/SKILL.md" "${FAKE}/.agents/skills/$s/SKILL.md"
   check "upgrade leaves symlink: $s" test -L "${FAKE}/.claude/skills/$s"
+  check "upgrade symlink resolves to refreshed content: $s" cmp -s "${BUNDLE}/skills/$s/SKILL.md" "${FAKE}/.claude/skills/$s/SKILL.md"
 done
 check "upgrade reports link kept" grep -q "leaving in place" "${LOG_DIR}/rfl-run10b.log"
 

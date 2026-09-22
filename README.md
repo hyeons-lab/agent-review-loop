@@ -5,7 +5,7 @@ Three multi-agent review skills sharing one pillars file:
 effort (`low`, `medium`, `high`, `max`), fixes what they find, and
 re-reviews until clean; `agent-review-report` runs one report-only `max`
 review over the working diff or a target PR and presents the findings;
-and `address-pr-comments` addresses review feedback on a target PR and
+and `agent-review-pr-comments` addresses review feedback on a target PR and
 syncs the stack. All three file novel learnings as they go (each round,
 each report, or each fix cycle for the PR skill), so later work reviews
 against what the earlier work learned.
@@ -25,9 +25,9 @@ Each skill body runs in **Muse**, **Claude Code**, **Codex**, and
   PR posts only with explicit approval).
 - `skills/agent-review-report/agents/openai.yaml`: Codex display metadata
   (ignored by other runtimes).
-- `skills/address-pr-comments/SKILL.md`: the PR feedback skill (fetch and
+- `skills/agent-review-pr-comments/SKILL.md`: the PR feedback skill (fetch and
   triage comments, apply fixes, sync stacked PRs, file learnings).
-- `skills/address-pr-comments/agents/openai.yaml`: Codex display metadata
+- `skills/agent-review-pr-comments/agents/openai.yaml`: Codex display metadata
   (ignored by other runtimes).
 - `templates/review-refinements.template.md`: seed for the shared learnings
   file that loops update.
@@ -60,18 +60,18 @@ Each flag installs all three skills under its directory:
 
 | Flag | Directory |
 |---|---|
-| `--agents` | `~/.agents/skills/{agent-review-loop,agent-review-report,address-pr-comments}` (canonical store) |
-| `--muse` | `$XDG_CONFIG_HOME/muse/skills/{agent-review-loop,agent-review-report,address-pr-comments}` (`~/.config` by default) |
-| `--claude` | `~/.claude/skills/{agent-review-loop,agent-review-report,address-pr-comments}` |
-| `--codex` | `~/.codex/skills/{agent-review-loop,agent-review-report,address-pr-comments}` |
-| `--antigravity` | `~/.gemini/config/skills/{agent-review-loop,agent-review-report,address-pr-comments}` |
+| `--agents` | `~/.agents/skills/{agent-review-loop,agent-review-report,agent-review-pr-comments}` (canonical store) |
+| `--muse` | `$XDG_CONFIG_HOME/muse/skills/{agent-review-loop,agent-review-report,agent-review-pr-comments}` (`~/.config` by default) |
+| `--claude` | `~/.claude/skills/{agent-review-loop,agent-review-report,agent-review-pr-comments}` |
+| `--codex` | `~/.codex/skills/{agent-review-loop,agent-review-report,agent-review-pr-comments}` |
+| `--antigravity` | `~/.gemini/config/skills/{agent-review-loop,agent-review-report,agent-review-pr-comments}` |
 
 Restart the agent (or start a new session) after installing, then invoke:
 
 ```text
 /agent-review-loop [low|medium|high|max]
-/agent-review-report [pr_number_or_url]
-/address-pr-comments [<pr_number_or_url>]
+/agent-review-report [<pr_number_or_url>]
+/agent-review-pr-comments [<pr_number_or_url>]
 ```
 
 Default effort for `agent-review-loop` is `high` (`agent-review-report`
@@ -111,10 +111,13 @@ simplification, and testing/observability). Resolution order:
    `$REVIEW_REFINEMENTS_LEGACY=1` is set; skipped by default).
 
 Multi-agent safety is built into the skill: one write target, a fresh read
-immediately before every edit, tool-agnostic bullets with no signatures,
-subsumption over duplication, append-only discipline, and a 2-bullet cap
-per round (5 per loop run). Pillar numbers and titles are a frozen
-contract across loops.
+immediately before every edit, automatic timestamped backups in `backups/`
+with user pruning prompts when backups accumulate, surgical chunk replacement
+scoped to single pillars, tool-agnostic bullets with no signatures, living
+document evolution (adding or merging suggestions and cleaning up the total
+bullets in each pillar so the file stays organized and evolves over time rather
+than accumulating uncurated additions), and strict cross-stack generality.
+Pillar numbers and titles are a frozen contract across loops.
 Repo-specific lessons bootstrap a repo-local `.agents/review-refinements.md`
 on demand, so each repo's reviews improve with use while general principles
 accumulate in the canonical file. Standing rule: every bullet in canonical must
@@ -140,11 +143,11 @@ that generally, abstract it or file it repo-local.
 ## Uninstall
 
 ```bash
-rm -rf ~/.agents/skills/agent-review-loop ~/.agents/skills/agent-review-report ~/.agents/skills/address-pr-comments \
-  "${XDG_CONFIG_HOME:-$HOME/.config}/muse/skills/agent-review-loop" "${XDG_CONFIG_HOME:-$HOME/.config}/muse/skills/agent-review-report" "${XDG_CONFIG_HOME:-$HOME/.config}/muse/skills/address-pr-comments" \
-  ~/.claude/skills/agent-review-loop ~/.claude/skills/agent-review-report ~/.claude/skills/address-pr-comments \
-  ~/.codex/skills/agent-review-loop ~/.codex/skills/agent-review-report ~/.codex/skills/address-pr-comments \
-  ~/.gemini/config/skills/agent-review-loop ~/.gemini/config/skills/agent-review-report ~/.gemini/config/skills/address-pr-comments
+rm -rf ~/.agents/skills/agent-review-loop ~/.agents/skills/agent-review-report ~/.agents/skills/agent-review-pr-comments \
+  "${XDG_CONFIG_HOME:-$HOME/.config}/muse/skills/agent-review-loop" "${XDG_CONFIG_HOME:-$HOME/.config}/muse/skills/agent-review-report" "${XDG_CONFIG_HOME:-$HOME/.config}/muse/skills/agent-review-pr-comments" \
+  ~/.claude/skills/agent-review-loop ~/.claude/skills/agent-review-report ~/.claude/skills/agent-review-pr-comments \
+  ~/.codex/skills/agent-review-loop ~/.codex/skills/agent-review-report ~/.codex/skills/agent-review-pr-comments \
+  ~/.gemini/config/skills/agent-review-loop ~/.gemini/config/skills/agent-review-report ~/.gemini/config/skills/agent-review-pr-comments
 ```
 
 This leaves `~/.agents/review-refinements.md` in place. Delete it as well
@@ -155,13 +158,13 @@ only when you mean to discard your accumulated learnings.
 When a script is not wanted:
 
 ```bash
-mkdir -p ~/.agents/skills/agent-review-loop/agents ~/.agents/skills/agent-review-report/agents ~/.agents/skills/address-pr-comments/agents
+mkdir -p ~/.agents/skills/agent-review-loop/agents ~/.agents/skills/agent-review-report/agents ~/.agents/skills/agent-review-pr-comments/agents
 cp skills/agent-review-loop/SKILL.md skills/agent-review-loop/thematic-review-pillars.md ~/.agents/skills/agent-review-loop/
 cp skills/agent-review-loop/agents/openai.yaml ~/.agents/skills/agent-review-loop/agents/
 cp skills/agent-review-report/SKILL.md ~/.agents/skills/agent-review-report/
 cp skills/agent-review-report/agents/openai.yaml ~/.agents/skills/agent-review-report/agents/
-cp skills/address-pr-comments/SKILL.md ~/.agents/skills/address-pr-comments/
-cp skills/address-pr-comments/agents/openai.yaml ~/.agents/skills/address-pr-comments/agents/
+cp skills/agent-review-pr-comments/SKILL.md ~/.agents/skills/agent-review-pr-comments/
+cp skills/agent-review-pr-comments/agents/openai.yaml ~/.agents/skills/agent-review-pr-comments/agents/
 # repeat the copies (or symlink) into any agent dir from the table above
 [ -e ~/.agents/review-refinements.md ] || cp templates/review-refinements.template.md ~/.agents/review-refinements.md
 ```

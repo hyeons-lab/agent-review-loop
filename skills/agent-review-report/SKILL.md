@@ -213,7 +213,7 @@ findings:
   report.
 3. **Suggested next step**: name the skill that fits what the user might
   want next (`agent-review-loop` to fix the diff in a loop,
-  `address-pr-comments` once PR feedback lands). Suggest only; never
+  `agent-review-pr-comments` once PR feedback lands). Suggest only; never
   invoke another skill unasked.
 
 ## 6. Optional PR Posting (PR Targets Only)
@@ -242,9 +242,9 @@ threads, and never post a second comment without a fresh approval.
 
 ## 7. Pillar Update (Shared Learnings, Multi-Agent Safe)
 
-A report-only review still teaches: file at most 2 genuinely novel
-bullets per run so later reviews catch what this one caught. Skip filing
-when the round taught nothing durable.
+A report-only review still teaches: incorporate all genuinely novel suggestions
+into the living document so later reviews catch what this one caught. Skip filing
+when the review taught nothing durable beyond existing bullets.
 
 Pick the write target in order:
 
@@ -281,7 +281,23 @@ Follow this exact sequence whenever filing learnings:
 1. **Fresh re-read**: View the target file immediately before editing, in the
    same step as the write. Never edit from a copy loaded at review start;
    another loop may have filed bullets in the interim.
-2. **Classify under the exact canonical pillar**: Match the lesson to one of
+2. **Automatic timestamped backup and accumulation check**:
+   - Before modifying the file, record the snapshot path and create a timestamped backup snapshot:
+     ```bash
+     backup_dir="$(dirname "$target")/backups"
+     backup_snapshot=""
+     if [ -f "$target" ]; then
+       mkdir -p "$backup_dir" || { echo "ERROR: failed to create backup directory: $backup_dir" >&2; exit 1; }
+       backup_snapshot="$backup_dir/review-refinements-$(date "+%Y%m%d-%H%M%S").md"
+       cp -p "$target" "$backup_snapshot" || { echo "ERROR: failed to snapshot $target to $backup_snapshot" >&2; exit 1; }
+     fi
+     ```
+   - Check if backups accumulate: if `[ -d "$backup_dir" ]`, count the backup files in `"$backup_dir"`
+     (for example, `ls -1 "$backup_dir"/review-refinements-*.md 2>/dev/null | wc -l`).
+     If more than 5 backups exist, ask the user in chat whether they would like
+     to prune older backups (keeping the latest 5). Never prune or delete
+     backups without explicit user confirmation.
+3. **Classify under the exact canonical pillar**: Match the lesson to one of
    the 8 canonical headings:
    - `### Pillar 1: Functional Correctness, Logic & Edge Cases`
    - `### Pillar 2: Security, Authentication & Input Sanitization`
@@ -294,11 +310,19 @@ Follow this exact sequence whenever filing learnings:
    Never invent custom pillar titles, rename a pillar, or add a 9th pillar.
    Every bullet filed in canonical must help across stacks and repositories;
    lessons specific to one repository belong in repo-local refinements.
-3. **Subsumption first**: Read existing bullets under that pillar's heading.
-   If an existing bullet already covers the core failure mode, edit that
-   bullet in place to broaden its trigger condition or refine its fix shape.
-   Do not add near-duplicate siblings.
-4. **Format the bullet**: Each bullet must adhere to the exact structure:
+4. **Add or merge (living document evolution)**: Read existing bullets under
+   that pillar's heading. Incorporate all actionable suggestions, optimizations,
+   and durable failure modes without arbitrary numerical quotas. If the review
+   surfaced nothing durable or novel beyond what is already codified, leave the
+   file untouched. Otherwise, for each suggestion, decide whether to merge it
+   into an existing bullet or add it as a new bullet:
+   - **Merge**: Actively rewrite existing bullets into broader, higher-level
+     principles that synthesize prior lessons and new findings into a cohesive
+     rule.
+   - **Add**: If a suggestion represents an entirely distinct concern that
+     cannot be naturally merged, add it as a new bullet, written at a general
+     cross-stack level.
+5. **Format the bullet**: Each bullet must adhere to the exact structure:
    `- **Title**: Trigger condition (when doing X): hazard or failure mode (Y occurs); fix shape and verification guidance (fix by doing Z, and verify via W).`
    - Single bullet starting with `- **Title**:`.
    - Title in Title Case (2 to 5 words).
@@ -308,17 +332,31 @@ Follow this exact sequence whenever filing learnings:
    - Punctuation invariants: zero em dashes (U+2014) or `--` / spaced hyphens
      as punctuation lookalikes. Use standard ASCII punctuation (colons, commas,
      semicolons, parentheses, periods).
-5. **Exact file placement**:
-   - If refining an existing bullet, replace it in place.
+6. **Surgical chunk editing and total cleanup**:
+   - Use surgical chunk replacement tools (never overwrite the entire file).
+     Edit only the lines within the specific `### Pillar N:` section being
+     modified.
+   - If merging with an existing bullet, rewrite it in place.
    - If adding a new bullet, insert it directly under the appropriate
      `### Pillar N:` heading (below `<!-- Loops append bullets here. -->` or
      after existing bullets in that section, strictly before the next
      `### Pillar` heading).
-     Never append bullets at the end of the file outside a pillar section.
-6. **Immediate read-back**: View the modified lines with a file viewing tool
-   to confirm correct placement, valid markdown, and preserved pillar structure.
-7. **Stay bounded**: At most 2 new or refined bullets per run. If the review
-   surfaced nothing durable or novel, leave the file untouched.
+   - **Clean up total bullets**: Do not just keep adding new bullets without
+     cleaning up the total bullets after adding them. After adding or merging,
+     review all bullets under that pillar as a whole: clean them up, reorganize
+     them for clarity, consolidate any overlapping themes, tighten phrasing,
+     and ensure the entire pillar remains concise, organized, and evolved
+     over time.
+   - Never append bullets at the end of the file outside a pillar section.
+7. **Immediate read-back and invariant verification**:
+   - View the modified lines with a file viewing tool to confirm correct
+     placement, valid markdown, and preserved pillar structure.
+   - Verify that all 8 `### Pillar` headings remain intact byte-for-byte
+     (`grep -c '^### Pillar' "$target"` must equal 8). If verification fails,
+     immediately roll back structural changes: if a backup snapshot was created
+     in step 2, restore from it (`cp -p "$backup_snapshot" "$target"`); if
+     `$target` was newly created in this cycle, remove it (`rm -f "$target"`),
+     before retrying or reporting failure.
 
 ## 8. Finishing Up
 

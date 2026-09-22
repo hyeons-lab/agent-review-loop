@@ -3,7 +3,7 @@
 This document defines the **8 Core Thematic Pillars** (the defaults) and the
 **self-improvement protocol** shared by every review loop that files
 learnings into the refinements file (`agent-review-loop`,
-`agent-review-report`, and `address-pr-comments`).
+`agent-review-report`, and `agent-review-pr-comments`).
 
 It travels with the skill and stays stable. Automated learning never edits
 this file; it writes to the Tier 2 file instead.
@@ -115,20 +115,33 @@ pillars by number. Never rename a pillar or add a 9th one.
 
 When a review loop learns a recurring pattern worth keeping:
 
-1. **Target**: file it per the write-target order in section 1 (override,
-   then repo-local for repo-specific lessons, creating that file when it is
-   missing, else canonical). Never write the legacy path. Never edit this
-   base file or any skill definition.
-2. **Subsumption**: map the pattern into one of the 8 pillars. Extend an
-   overlapping bullet instead of adding a sibling.
-3. **Generalization**: abstract away file names, line numbers, and variable
+1. **Fresh re-read**: view the target refinements file immediately before
+   editing in the exact same turn as the write.
+2. **Automatic timestamped backup**: before modifying the file, record the
+   snapshot path (`"$backup_snapshot"`) and create a timestamped snapshot in
+   `"$backup_dir"` (`review-refinements-YYYYMMDD-HHMMSS.md`) if `$target`
+   exists on disk. If `[ -d "$backup_dir" ]` contains more than 5 backups,
+   ask the user in chat whether they would like to prune older backups
+   (keeping the latest 5).
+3. **Target & pillar mapping**: file per the write-target order in section 1
+   (override, then repo-local for repo-specific lessons, else canonical).
+   Map every suggestion into one of the 8 canonical pillars by exact title.
+4. **Add or merge (living document evolution)**: incorporate all actionable
+   suggestions without arbitrary quotas. Merge into an existing bullet by
+   actively rewriting it broader, or add it as a distinct general bullet.
+5. **Clean up total bullets**: do not just keep adding new bullets without
+   cleaning up the total bullets after adding them. Review all bullets under the
+   pillar, consolidate overlapping concepts, eliminate redundancies, and
+   reorganize them so the document evolves into an organized living reference.
+6. **Generalization**: abstract away file names, line numbers, and variable
    names. State trigger, hazard, and fix shape so the bullet helps a future
    review in a different file. Standing rule for canonical: the bullet must
    help a review in a different repo on a different stack; if it cannot be
    stated that generally, abstract it or file it repo-local.
-4. **Theme clustering**: merge related micro-issues into one cohesive
-   principle. Cap each loop run at 5 new or refined bullets.
-5. **Multi-agent safety**: re-read the target file immediately before
-   editing; keep bullets tool-agnostic (no agent, model, runtime, or tool
-   names); add no signatures or date tags; append or refine only, never
-   delete, reword wholesale, or reformat.
+7. **Surgical editing & invariant verification**: use surgical chunk
+   replacement tools (never overwrite the entire file); keep bullets
+   tool-agnostic (no agent, model, runtime, or tool names); add no signatures
+   or date tags; verify that all 8 canonical pillar headings remain intact
+   byte-for-byte (`grep -c '^### Pillar'` equals 8). If verification fails,
+   immediately roll back structural changes (restore from the step 2 snapshot
+   if one was created, or remove `$target` if it was newly created) before retrying.

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Address PR Comments"
-  short_description: "Fix PR review feedback and sync the stack"
-  default_prompt: "Use $address-pr-comments to address the review comments on the target PR."
