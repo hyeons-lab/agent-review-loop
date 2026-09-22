@@ -160,9 +160,10 @@ Assign reviewer roles using the exact canonical pillar names:
 
 Use your runtime's row. Every reviewer in the round reports before you
 classify anything. If a reviewer has not reported within the runtime
-default timeout, re-prompt it once; if still silent, proceed with the
-reports in hand, note the missing lens in the round summary, and treat
-its pillars as uncovered next round.
+default timeout, re-prompt it once; if still silent, cancel or terminate the
+subagent if your runtime supports it, proceed with the reports in hand, note
+the missing lens in the round summary, and treat its pillars as uncovered next
+round.
 
 <!-- Mirrored with skills/agent-review-report/SKILL.md: keep runtime rows in sync. -->
 | Runtime | How to spawn one reviewer per lens | How to collect |
@@ -175,7 +176,7 @@ its pillars as uncovered next round.
 
 Every reviewer prompt must include:
 
-- The `/tmp` path of the filtered diff saved in section 4, plus its line
+- The scratch path of the filtered diff saved in section 4, plus its line
   count. The reviewer quotes both back in the report header, so a scope
   mismatch (stale diff, wrong worktree) is visible before anything else.
   Embed the diff text only when it is small enough to fit comfortably.

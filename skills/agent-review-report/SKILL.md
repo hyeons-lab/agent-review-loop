@@ -42,7 +42,23 @@ The skill takes an optional target argument:
   unstaged). When the tree is clean but the branch is ahead of its base,
   review the **branch diff** (`git diff <base>...HEAD`, base from the
   merge-base with the default branch). Inside a worktree, run every
-  `git` command with `git -C <worktree>`.
+  `git` command with `git -C <worktree>`. Filter out lockfiles, generated
+  code, and binary artifacts into a scratch file:
+  ```bash
+  if git diff --quiet HEAD -- .; then
+    base="$(git merge-base origin/main HEAD 2>/dev/null || git merge-base main HEAD 2>/dev/null || echo "origin/main")"
+    diff_target="${base}...HEAD"
+  else
+    diff_target="HEAD"
+  fi
+
+  diff_file="$(mktemp "${TMPDIR:-/tmp}/agent-review-report-diff.XXXXXX")"
+  git --no-pager diff "${diff_target}" -- . \
+    ':!**/*.lock' ':!**/Cargo.lock' ':!**/package-lock.json' ':!**/pnpm-lock.yaml' ':!**/uv.lock' \
+    ':!**/target/**' ':!**/dist/**' ':!**/build/**' ':!**/node_modules/**' \
+    ':!**/*.onnx*' ':!**/*.gguf' ':!**/*.wasm' ':!**/*.dylib' ':!**/*.so' ':!**/*.dll' \
+    ':!**/generated/**' ':!devlog/**' ':!docs/**' > "$diff_file"
+  ```
 - **PR number or URL**: review that PR's diff. `gh` and `jq` must be on
   `PATH`. When they are installed but not found (for example a macOS
   Homebrew install outside the inherited `PATH`), prefix the commands
@@ -67,26 +83,10 @@ The skill takes an optional target argument:
   when any fetch fails or the diff is empty; never present a report
   over a diff that was never fetched.
 
-Filter out lockfiles, generated code, and binary artifacts before reviewing:
-
-```bash
-if git diff --quiet HEAD -- .; then
-  base="$(git merge-base origin/main HEAD 2>/dev/null || git merge-base main HEAD 2>/dev/null || echo "origin/main")"
-  diff_target="${base}...HEAD"
-else
-  diff_target="HEAD"
-fi
-
-git --no-pager diff "${diff_target}" -- . \
-  ':!**/*.lock' ':!**/Cargo.lock' ':!**/package-lock.json' ':!**/pnpm-lock.yaml' ':!**/uv.lock' \
-  ':!**/target/**' ':!**/dist/**' ':!**/build/**' ':!**/node_modules/**' \
-  ':!**/*.onnx*' ':!**/*.gguf' ':!**/*.wasm' ':!**/*.dylib' ':!**/*.so' ':!**/*.dll' \
-  ':!**/generated/**' ':!devlog/**' ':!docs/**'
-```
-
 Save the filtered diff to a uniquely named scratch file under
 `${TMPDIR:-/tmp}` (for example via `mktemp`) so concurrent runs never
-share it and reviewers can inspect it without context truncation. For a
+share it and reviewers can inspect it without context truncation. Clean up the
+scratch diff file when the report finishes (`rm -f "$diff_file"`). For a
 PR target, apply the same exclusions by path when reading the fetched
 diff. Never review a diff you have not read; never let a reviewer
 report stand in for reading the changed code.
@@ -129,16 +129,17 @@ starts blind.
 
 Run exactly one review round: 8 parallel reviewers, one per pillar. Only
 after all 8 reports have returned (or timed out after one re-prompt), run one
-synthesis reviewer that reconciles overlaps before you see the report. If a
-reviewer has timed out, cancel or terminate it according to your runtime's
-lifecycle management before invoking synthesis. Never spawn synthesis
-concurrently with the pillar reviewers. When your runtime caps concurrent
-subagents, run the reviewers in waves inside the same round. Coverage stays
-fixed; only the scheduling bends.
+synthesis reviewer that reconciles overlaps before you see the report. If all
+reviewers reported NO FINDINGS, skip spawning a synthesis reviewer and present
+NO FINDINGS directly. If a reviewer has timed out, cancel or terminate it
+according to your runtime's lifecycle management before invoking synthesis.
+Never spawn synthesis concurrently with the pillar reviewers. When your runtime
+caps concurrent subagents, run the reviewers in waves inside the same round.
+Coverage stays fixed; only the scheduling bends.
 
 Each reviewer audits the filtered diff plus the surrounding source it
 needs (callers, types, tests, configs) against its assigned pillar of
-the **8 Core Thematic Pillars**:
+the **8 Canonical Thematic Pillars**:
 
 1. Functional Correctness, Logic & Edge Cases
 2. Security, Authentication & Input Sanitization
@@ -316,3 +317,8 @@ Follow this exact sequence whenever filing learnings:
    to confirm correct placement, valid markdown, and preserved pillar structure.
 7. **Stay bounded**: At most 2 new or refined bullets per run. If the review
    surfaced nothing durable or novel, leave the file untouched.
+
+## 8. Finishing Up
+
+Always clean up the scratch diff file created in section 1 (`rm -f "$diff_file"`).
+

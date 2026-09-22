@@ -85,7 +85,8 @@ then fetch:
 # Resolve once: canonical number plus the triage SHA for the summary
 gh pr view <pr_input> --json number,headRefOid --jq '"number: \(.number)", "triage_sha: \(.headRefOid)"' || { echo "ERROR: PR resolve failed; check the number or URL and gh auth"; exit 1; }
 
-scratch_dir="$(mktemp -d "${TMPDIR:-/tmp}/pr-comments.XXXXXX")"
+scratch_dir="$(mktemp -d "${TMPDIR:-/tmp}/pr-comments.XXXXXX")" || { echo "ERROR: failed to create scratch directory; check TMPDIR permissions and disk space" >&2; exit 1; }
+trap 'rm -rf "${scratch_dir:?}"' EXIT
 
 # Inline diff comments
 gh api /repos/{owner}/{repo}/pulls/<pr_number>/comments > "${scratch_dir}/diff-comments.json" || { echo "ERROR: diff-comment fetch failed; check the PR number and gh auth"; exit 1; }
@@ -99,6 +100,7 @@ jq -r '.[] | "REVIEW [\(.id)] \(.state) by \(.user.login):\n\(.body)\n"' "${scra
 gh api /repos/{owner}/{repo}/issues/<pr_number>/comments > "${scratch_dir}/issue-comments.json" || { echo "ERROR: issue-comment fetch failed; check the PR number and gh auth"; exit 1; }
 jq -r '.[] | "ISSUE [\(.id)] by \(.user.login):\n\(.body)\n"' "${scratch_dir}/issue-comments.json" || { echo "ERROR: issue-comment render failed; check jq and the JSON payload"; exit 1; }
 
+trap - EXIT
 rm -rf "${scratch_dir}"
 ```
 
@@ -193,31 +195,47 @@ Pick the write target in order:
    only when `$REVIEW_REFINEMENTS_LEGACY=1` is set; all new writes go to
    canonical or repo-local.
 
-Re-read the target file immediately before editing, in the same step as
-the write. Never edit from a stale copy; another loop may have filed
-bullets since.
+When updating the target refinements file, follow this protocol strictly:
 
-Rules:
-
-1. **Subsumption first**: if an existing bullet under a pillar already
-   covers the lesson, refine that bullet instead of adding a sibling.
-2. **Generalize**: write the principle the finding taught (trigger,
-   hazard, fix shape), not the instance. One bullet must help a future
-   review in a different file, and every bullet in canonical must help
-   across stacks.
-3. **Higher-order abstraction**: when several specific checks are
-   variations of one concept, synthesize them into a single principle
-   rather than filing each one.
-4. **File under the right pillar**: match the finding to one of the 8
-   `### Pillar N:` sections. Never add a 9th pillar or rename one.
-5. **Stay bounded**: at most 2 new or refined bullets per cycle, at most 5
-   per run. Skip anything already covered, anything repo-specific trivia,
-   and anything you are not confident will recur.
-6. **Append-only discipline**: add or refine bullets only. Never delete or
-   rewrite another loop's bullets, and never reformat the file.
-7. **Tool-agnostic bullets**: state trigger, hazard, and fix shape. Never
-   name an agent, model, runtime, or assistant tool in a bullet.
-8. **No signatures**: no author, date, or source tags on bullets.
+1. **Fresh read**: View the target refinements file with your file viewing
+   tool in the exact same turn as your edit. Never work from memory or a
+   previous turn's read.
+2. **Classify under the canonical 8 pillars**: Map the novel finding to
+   one of the 8 canonical pillar sections by number and exact title:
+   - `### Pillar 1: Functional Correctness, Logic & Edge Cases`
+   - `### Pillar 2: Security, Authentication & Input Sanitization`
+   - `### Pillar 3: Concurrency, Asynchrony & Lifecycle Management`
+   - `### Pillar 4: Error Handling, Resilience & Diagnostics`
+   - `### Pillar 5: Interface Contracts, API Design & Compatibility`
+   - `### Pillar 6: Performance, Resource Efficiency & Scalability`
+   - `### Pillar 7: Code Simplification, Clean Architecture & Maintainability`
+   - `### Pillar 8: Testing, Observability & Verification Invariants`
+   Never invent custom pillar titles, rename a pillar, or add a 9th pillar.
+3. **Subsumption first**: Read existing bullets under that pillar's heading.
+   If an existing bullet already covers the core failure mode, edit that
+   bullet in place to broaden its trigger condition or refine its fix shape.
+   Do not add near-duplicate siblings.
+4. **Format the bullet**: Each bullet must adhere to the exact structure:
+   `- **Title**: Trigger condition (when doing X): hazard or failure mode (Y occurs); fix shape and verification guidance (fix by doing Z, and verify via W).`
+   - Single bullet starting with `- **Title**:` (2 to 5 words in Title Case).
+   - Domain-neutral trigger, hazard, and fix shape.
+   - Tool-agnostic: never name an agent, model, runtime, or assistant tool.
+   - Zero attribution: no signatures, author tags, dates, or loop IDs.
+   - Punctuation invariants: zero em dashes (U+2014) or `--` / spaced hyphens
+     as punctuation lookalikes. Use standard ASCII punctuation (colons, commas,
+     semicolons, parentheses, periods).
+5. **Exact file placement**:
+   - If refining an existing bullet, replace it in place.
+   - If adding a new bullet, insert it directly under the appropriate
+     `### Pillar N:` heading (below `<!-- Loops append bullets here. -->` or
+     after existing bullets in that section, strictly before the next
+     `### Pillar` heading).
+   - Never append bullets at the end of the file outside a pillar section.
+6. **Immediate read-back**: View the modified lines with a file viewing tool
+   to confirm correct placement, valid markdown, and preserved pillar structure.
+7. **Stay bounded**: At most 2 new or refined bullets per fix cycle, at most 5
+   per PR run. If the cycle surfaced nothing durable or novel, leave the file
+   untouched.
 
 ---
 

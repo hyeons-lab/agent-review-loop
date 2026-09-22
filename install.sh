@@ -92,8 +92,12 @@ err() {
 copy_atomic() {
   # copy_atomic <src> <dest>: copy via temp file plus rename.
   local src="$1" dest="$2" tmp
+  if [ -d "${dest}" ]; then
+    err "ERROR: destination is an existing directory: ${dest}"
+    return 1
+  fi
   tmp="$(mktemp "${dest}.tmp.XXXXXX")" || return 1
-  if cp "${src}" "${tmp}" && mv -f "${tmp}" "${dest}"; then
+  if cp -p "${src}" "${tmp}" && mv -f "${tmp}" "${dest}"; then
     return 0
   fi
   rm -f "${tmp}"
@@ -155,11 +159,13 @@ install_skill_copy() {
     log "  replace symlink with directory: ${dest}"
     rm "${dest}" || return 1
   fi
-  if [ "${DRY_RUN}" -eq 1 ]; then
-    printf '[dry-run] mkdir -p %s %s/agents\n' "${dest}" "${dest}"
-  elif ! mkdir -p "${dest}" "${dest}/agents"; then
-    printf '  FAILED to create directory: %s\n' "${dest}"
-    return 1
+  if [ ! -d "${dest}/agents" ]; then
+    if [ "${DRY_RUN}" -eq 1 ]; then
+      printf '[dry-run] mkdir -p %s/agents\n' "${dest}"
+    elif ! mkdir -p "${dest}/agents"; then
+      printf '  FAILED to create directory: %s\n' "${dest}"
+      return 1
+    fi
   fi
   files="$(skill_files "${skill}")" || return 1
   for file in ${files}; do
@@ -172,12 +178,12 @@ install_skill_link() {
   local skill="$1" dest="$2"
   local canonical="${AGENTS_BASE}/${skill}"
   log "==> Skill (link): ${skill} ${dest} -> ${canonical}"
-  if [ "${DRY_RUN}" -eq 1 ]; then
-    printf '[dry-run] link %s -> %s\n' "${dest}" "${canonical}"
-    return 0
-  fi
   if [ -L "${dest}" ] && [ "$(readlink "${dest}")" = "${canonical}" ]; then
     printf '  unchanged: %s\n' "${dest}"
+    return 0
+  fi
+  if [ "${DRY_RUN}" -eq 1 ]; then
+    printf '[dry-run] link %s -> %s\n' "${dest}" "${canonical}"
     return 0
   fi
   if ! is_missing "${dest}"; then
@@ -289,12 +295,6 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-if [ -z "${TARGETS}" ]; then
-  TARGETS="agents muse claude codex antigravity"
-fi
-# Deduplicate while keeping order.
-TARGETS="$(printf '%s\n' ${TARGETS} | awk '!seen[$0]++' | tr '\n' ' ')"
-
 for skill in ${SKILLS}; do
   if [ ! -f "${SCRIPT_DIR}/skills/${skill}/SKILL.md" ]; then
     err "ERROR: skill source not found: ${SCRIPT_DIR}/skills/${skill}/SKILL.md"
@@ -313,9 +313,13 @@ fi
 # Link mode and upgrade both need the canonical store in scope and first:
 # links are created against it, and linked installs refresh through it (a
 # missing canonical copy is still skipped, never newly installed).
-if [ "${LINK_MODE}" -eq 1 ] || [ "${UPGRADE_MODE}" -eq 1 ]; then
-  TARGETS="$(printf 'agents\n%s\n' ${TARGETS} | awk '!seen[$0]++' | tr '\n' ' ')"
+if [ -z "${TARGETS}" ]; then
+  TARGETS="agents muse claude codex antigravity"
+elif [ "${LINK_MODE}" -eq 1 ] || [ "${UPGRADE_MODE}" -eq 1 ]; then
+  TARGETS="agents ${TARGETS}"
 fi
+# Deduplicate while keeping order.
+TARGETS="$(printf '%s\n' ${TARGETS} | awk '!seen[$0]++' | tr '\n' ' ')"
 
 failures=0
 for skill in ${SKILLS}; do
@@ -357,4 +361,4 @@ if [ "${failures}" -gt 0 ]; then
   log "Completed with ${failures} problem(s)."
   exit 1
 fi
-log "Done. Invoke with /agent-review-loop [low|medium|high|max], /agent-review-report [pr], or /address-pr-comments <pr> in any supported agent."
+log "Done. Invoke with /agent-review-loop [low|medium|high|max], /agent-review-report [<pr>], or /address-pr-comments [<pr>] in any supported agent."
