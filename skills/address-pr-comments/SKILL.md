@@ -166,9 +166,10 @@ shared refinements file both skills read. Resolution order for reading
 (the more specific file wins a direct conflict):
 
 - `$REVIEW_REFINEMENTS_FILE` when set (explicit override).
-- Canonical `~/.agents/review-refinements.md` (default write target).
-- Legacy `~/.gemini/review-refinements.md` (read only).
 - Repo-local `.agents/review-refinements.md` (project specific).
+- Canonical `~/.agents/review-refinements.md` (default write target).
+- Legacy `~/.gemini/review-refinements.md` (read only when
+  `$REVIEW_REFINEMENTS_LEGACY=1` is set; skipped by default).
 
 Pick the write target in order:
 
@@ -179,10 +180,14 @@ Pick the write target in order:
    `### Pillar N:` headings when it does not exist yet. Do not commit the
    repo-local file on your own; include it only in a commit the user
    explicitly approved.
-3. Otherwise the canonical `~/.agents/review-refinements.md`. When it does
-   not exist yet, create it with the 8 `### Pillar N:` headings, then
-   append.
-4. Never write the legacy `~/.gemini/review-refinements.md` path.
+3. Otherwise the canonical `~/.agents/review-refinements.md`. Standing rule:
+   every filed bullet must help a review in a different repo on a different
+   stack; if it cannot be stated that generally, abstract it or file it
+   repo-local. When it does not exist yet, create it with the 8
+   `### Pillar N:` headings, then append.
+4. Never write the legacy `~/.gemini/review-refinements.md` path. It is read
+   only when `$REVIEW_REFINEMENTS_LEGACY=1` is set; all new writes go to
+   canonical or repo-local.
 
 Re-read the target file immediately before editing, in the same step as
 the write. Never edit from a stale copy; another loop may have filed
@@ -194,7 +199,8 @@ Rules:
    covers the lesson, refine that bullet instead of adding a sibling.
 2. **Generalize**: write the principle the finding taught (trigger,
    hazard, fix shape), not the instance. One bullet must help a future
-   review in a different file.
+   review in a different file, and every bullet in canonical must help
+   across stacks.
 3. **Higher-order abstraction**: when several specific checks are
    variations of one concept, synthesize them into a single principle
    rather than filing each one.

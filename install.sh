@@ -216,7 +216,7 @@ seed_refinements() {
   fi
   if [ -f "${LEGACY_REFINEMENTS}" ]; then
     log "  note: legacy ${LEGACY_REFINEMENTS} exists and stays in place;"
-    log "  the skill reads it as a fallback and writes new bullets here."
+    log "  set REVIEW_REFINEMENTS_LEGACY=1 to include it in reviews."
   fi
 }
 

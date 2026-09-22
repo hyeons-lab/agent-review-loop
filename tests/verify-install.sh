@@ -62,6 +62,7 @@ echo "### Pillar 1: legacy" > "${FAKE}/.gemini/review-refinements.md"
 check "legacy untouched" grep -q "legacy" "${FAKE}/.gemini/review-refinements.md"
 check "canonical seeded" grep -q "Shared Review Refinements" "${FAKE}/.agents/review-refinements.md"
 check "legacy note printed" grep -q "legacy" /tmp/rfl-run4.log
+check "legacy opt-in mentioned" grep -q "REVIEW_REFINEMENTS_LEGACY=1" /tmp/rfl-run4.log
 
 echo "--- 5. selective install ---"
 fresh_fake

@@ -19,9 +19,14 @@ this file; it writes to the Tier 2 file instead.
    synthesized from real reviews. Resolution order (read every file that
    exists; the more specific file wins a direct conflict):
    - `$REVIEW_REFINEMENTS_FILE` when set (explicit override).
+   - Repo-local `.agents/review-refinements.md` (project-specific invariants).
    - Canonical `~/.agents/review-refinements.md` (default write target).
-   - Legacy `~/.gemini/review-refinements.md` (read only).
-   - Repo-local `.agents/review-refinements.md` (project specific).
+   - Legacy `~/.gemini/review-refinements.md` (read only when
+     `$REVIEW_REFINEMENTS_LEGACY=1` is set; skipped by default).
+
+   Standing rule: every bullet in the canonical file must help a review in a
+   different repo on a different stack. Repo-specific lessons belong in the
+   repo-local file.
 
 ## 2. The 8 Core Categories (Pillars)
 
@@ -31,67 +36,79 @@ pillars by number. Never rename a pillar or add a 9th one.
 
 ### Pillar 1: Low-Level Safety, Alignment & Buffer Invariants
 
-- Memory alignment and safe slice casting (checked casts with fallbacks over
-  panic-prone direct casts on unaligned or memory-mapped buffers).
-- Bounded reads and writes: capped stream decoding, guarded empty or
-  zero-byte allocations, padded chunk remainders, and verified buffer
-  extents before slicing across trust or language boundaries.
+- Memory alignment and safe casting: validate memory alignment, size, and
+  layout invariants before reading or transmuting raw buffers (e.g. mmap,
+  network packets, serialized payloads); use checked casting helpers or safe
+  parsers with fallbacks over unchecked direct casts.
+- Bounded reads, writes, and buffer indexing: enforce capped stream decoding,
+  verified buffer extents before slicing across trust boundaries, and guarded
+  zero-byte or empty allocation edge cases to prevent out-of-bounds indexing,
+  buffer overflows, and memory exhaustion.
 
 ### Pillar 2: Concurrency, Cancellation & State Machine Lifecycles
 
-- Cancellation and shutdown lifecycles: reset latches at session entry,
-  resolve every pending promise on error paths, and tear down workers,
-  timers, and leases without leaks or use-after-free.
-- Contention and ordering: batch queries under one lock acquisition, bound
-  IPC timeouts with graceful fallback, and keep monotonic sequences intact
-  across restarts and handovers.
+- Cancellation and resource cleanup: tie cleanup to RAII drop guards, defer
+  statements, or finally blocks; reset cancellation latches on session entry;
+  resolve all pending futures or promises on error paths; and terminate
+  workers, timers, and connections without leaks or use-after-free.
+- Contention and synchronization: minimize lock hold durations (batching
+  queries where feasible); enforce explicit timeouts with graceful fallbacks
+  on external IPC, socket, and service boundaries; and preserve monotonic
+  sequence invariants across restarts and handovers.
 
 ### Pillar 3: Error Propagation, Diagnostics & No-Panic Invariants
 
-- No-panic runtime paths: return typed errors (`Result`, `?`, or the
-  language equivalent) instead of force-unwrapping values that untrusted
-  input can influence.
-- Persistence and diagnostics: atomic file writes (temp file plus rename),
-  explicit permission modes, and errors that name the failing resource and
-  the recovery path.
+- Safe error propagation: return typed, inspectable errors (`Result`, error
+  objects, or the language equivalent) instead of force-unwrapping, panicking,
+  or swallowing failures in runtime paths processing untrusted or dynamic input.
+- Diagnostics and atomic persistence: stage file modifications through
+  temporary writes followed by atomic renames; enforce explicit permissions;
+  redact credentials from logs; and emit actionable diagnostic messages naming
+  the failing resource and recovery path.
 
 ### Pillar 4: Multiplatform Portability & Cross-Binding Drift
 
-- Foreign binding sync: generated bindings (FFI, WASM, mobile, typed
-  clients) regenerated and drift-checked whenever the source surface moves.
-- Portable builds: stable toolchain features by default, feature-gated
-  platform code, and no hardcoded page sizes, paths, or OS identities.
+- Cross-boundary interface sync: keep generated bindings (e.g. FFI, WASM,
+  mobile bridges, typed clients) and shared schemas synchronized with source
+  definitions; detect drift automatically in validation checks.
+- Portable builds and environment independence: rely on stable toolchain
+  features; feature-gate platform-specific logic; avoid hardcoding paths,
+  endianness, page sizes, line endings, or OS identities.
 
 ### Pillar 5: Numerical Robustness & Boundary Validation
 
-- Finite, in-range arithmetic: finiteness checks on floats that feed
-  decisions, nonzero positive denominators, and saturating or checked
-  integer math on sizes, offsets, and capacities.
-- Clamped boundaries: inputs and config values validated against the tables
-  and buffers they index before use.
+- Arithmetic safety and precision: verify floating-point values for finiteness
+  before branching; guard against division by zero; use checked, saturating, or
+  widened integer arithmetic for sizes, offsets, and capacities.
+- Boundary and domain validation: validate numeric configurations, pagination
+  parameters, and index arguments against the bounds of backing tables and
+  buffers at entry boundaries.
 
 ### Pillar 6: Pipeline Completeness & Contract Faithfulness
 
-- End-to-end parameter fidelity: sampling, filtering, and config options
-  forwarded unchanged through every pipeline stage to the kernel that
-  honors them.
-- Traversal and isolation guards: shell metacharacters, path escapes, and
-  credential scopes contained at each stage boundary.
+- End-to-end parameter fidelity: pass options, flags, filters, and context
+  metadata unchanged through each pipeline layer to the underlying execution
+  handler that honors them.
+- Traversal and containment guards: contain shell metacharacters, path
+  escapes, query delimiters, and credential scopes at every boundary.
 
 ### Pillar 7: Performance, SIMD & Resource Efficiency
 
-- Hot-path allocation discipline: pre-allocated and reused scratch buffers,
-  eliminated staging copies, and vectorized kernels where the workload is
-  regular.
-- Right-sized dispatch: threaded or batched work split to amortize launch
-  cost without starving interactive or priority lanes.
+- Hot-path allocation discipline: reuse scratch buffers, eliminate unnecessary
+  intermediate copies or staging allocations, and apply data parallelism or
+  vectorization (e.g. SIMD) where workloads are uniform.
+- Right-sized dispatch and scheduling: batch fine-grained operations to amortize
+  overhead, apply backpressure to incoming streams, and maintain fairness
+  between interactive requests and background tasks.
 
 ### Pillar 8: Code Simplification, Cleanup & Complexity Reduction
 
-- Flattened structure: guard clauses over nested conditionals, standard
-  combinators over manual loops, and no premature abstraction layers.
-- Removed dead weight: deleted obsolete code, deduplicated boilerplate, and
-  one canonical helper per repeated pattern.
+- Flattened structure and clear control flow: prefer early guard clauses over
+  nested conditionals, leverage standard library combinators, and avoid
+  premature abstraction layers or needless indirection.
+- Removed dead weight and canonical helpers: delete obsolete code, unused
+  branches, and duplicate boilerplate, maintaining one canonical helper per
+  repeated pattern.
 
 ## 3. Self-Improvement Protocol
 
@@ -105,7 +122,9 @@ When a review loop learns a recurring pattern worth keeping:
    overlapping bullet instead of adding a sibling.
 3. **Generalization**: abstract away file names, line numbers, and variable
    names. State trigger, hazard, and fix shape so the bullet helps a future
-   review in a different file.
+   review in a different file. Standing rule for canonical: the bullet must
+   help a review in a different repo on a different stack; if it cannot be
+   stated that generally, abstract it or file it repo-local.
 4. **Theme clustering**: merge related micro-issues into one cohesive
    principle. Cap each loop run at 5 new or refined bullets.
 5. **Multi-agent safety**: re-read the target file immediately before

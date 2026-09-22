@@ -95,11 +95,11 @@ error propagation, portability, numerical robustness, pipeline completeness,
 performance, simplification). Resolution order:
 
 1. `$REVIEW_REFINEMENTS_FILE` when set (explicit override).
-2. Canonical `~/.agents/review-refinements.md` (default target; all four
+2. Repo-local `.agents/review-refinements.md` (project specific; additive).
+3. Canonical `~/.agents/review-refinements.md` (default target; all four
    runtimes read and write it).
-3. Legacy `~/.gemini/review-refinements.md` (read only; existing files keep
-   working, new bullets go to the canonical path).
-4. Repo-local `.agents/review-refinements.md` (project specific; additive).
+4. Legacy `~/.gemini/review-refinements.md` (read only when
+   `$REVIEW_REFINEMENTS_LEGACY=1` is set; skipped by default).
 
 Multi-agent safety is built into the skill: one write target, a fresh read
 immediately before every edit, tool-agnostic bullets with no signatures,
@@ -108,7 +108,9 @@ per round (5 per loop run). Pillar numbers and titles are a frozen
 contract across loops.
 Repo-specific lessons bootstrap a repo-local `.agents/review-refinements.md`
 on demand, so each repo's reviews improve with use while general principles
-accumulate in the canonical file.
+accumulate in the canonical file. Standing rule: every bullet in canonical must
+help a review in a different repo on a different stack; if it cannot be stated
+that generally, abstract it or file it repo-local.
 
 ## Idempotency
 
@@ -117,8 +119,9 @@ accumulate in the canonical file.
   checked-out version, so keep local edits elsewhere.
 - `~/.agents/review-refinements.md` is created from the template only when
   missing. It is never overwritten, merged, or reformatted. Existing
-  learnings (including a legacy `~/.gemini/review-refinements.md`, which is
-  never touched) survive every reinstall.
+  learnings survive every reinstall. A legacy
+  `~/.gemini/review-refinements.md` file is never touched; set
+  `REVIEW_REFINEMENTS_LEGACY=1` to include it in reviews.
 - `--link` converges too: correct links report `unchanged`, wrong ones are
   repointed, and switching back to a plain `./install.sh` replaces links
   with real copies.

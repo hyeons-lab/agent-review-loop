@@ -85,12 +85,13 @@ Two tiers, same contract in every runtime:
    audit against the union. On a direct conflict, the more specific file
    wins (repo-local first, then canonical, then legacy):
    - `$REVIEW_REFINEMENTS_FILE` when set (explicit override).
-   - Canonical `~/.agents/review-refinements.md` (default write target;
-     every supported agent reads it).
-   - Legacy `~/.gemini/review-refinements.md` (read only; kept so older
-     loops keep contributing).
    - Repo-local `.agents/review-refinements.md` (project specific; read in
      addition when present).
+   - Canonical `~/.agents/review-refinements.md` (default write target;
+     every supported agent reads it).
+   - Legacy `~/.gemini/review-refinements.md` (read only when
+     `$REVIEW_REFINEMENTS_LEGACY=1` is set; skipped by default so
+     repo-specific inference lessons do not pollute other projects).
 
 ## 4. Diff Extraction and Noise Filtering
 
@@ -267,12 +268,15 @@ Pick the write target in order:
    repo, general principles accumulate in the canonical file. Do not commit
    the repo-local file on your own; include it only in a commit the user
    explicitly approved.
-3. Otherwise the canonical `~/.agents/review-refinements.md`. When it does
-   not exist yet, create it with the 8 `### Pillar N:` headings (copy their
-   exact titles from the bundled base pillars file), then append.
-4. Never write the legacy `~/.gemini/review-refinements.md` path. Older
-   loops may still append there; this loop only reads it. Routing all new
-   writes through one target keeps learnings from splitting across files.
+3. Otherwise the canonical `~/.agents/review-refinements.md`. Standing rule:
+   every filed bullet must help a review in a different repo on a different
+   stack; if it cannot be stated that generally, abstract it or file it
+   repo-local. When canonical does not exist yet, create it with the 8
+   `### Pillar N:` headings (copy their exact titles from the bundled base
+   pillars file), then append.
+4. Never write the legacy `~/.gemini/review-refinements.md` path. It is read
+   only when `$REVIEW_REFINEMENTS_LEGACY=1` is set; all new writes go to
+   canonical or repo-local.
 
 Re-read the target file immediately before editing, in the same step as
 the write. Never edit from the copy loaded at round start; another loop
@@ -285,7 +289,7 @@ Rules:
    the lesson, refine that bullet instead of adding a sibling.
 2. **Generalize**: write the principle the finding taught (trigger, hazard,
    fix shape), not the instance. One bullet must help a future review in a
-   different file.
+   different file, and every bullet in canonical must help across stacks.
 3. **File under the right pillar**: match the finding to one of the 8
    `### Pillar N:` sections. Never add a 9th pillar or rename one; every
    loop addresses pillars by number.
