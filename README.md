@@ -1,12 +1,14 @@
 # `agent-review-loop`
 
-Two multi-agent review skills sharing one pillars file: `agent-review-loop`
-reviews the working diff with subagents at a fixed effort (`low`, `medium`,
-`high`, `max`), fixes what they find, and re-reviews until clean, while
-`address-pr-comments` addresses review feedback on a target PR and syncs the
-stack. Both file novel learnings as they go (each round, or each fix
-cycle for the PR skill), so later work reviews against what the earlier
-work learned.
+Three multi-agent review skills sharing one pillars file:
+`agent-review-loop` reviews the working diff with subagents at a fixed
+effort (`low`, `medium`, `high`, `max`), fixes what they find, and
+re-reviews until clean; `agent-review-report` runs one report-only `max`
+review over the working diff or a target PR and presents the findings;
+and `address-pr-comments` addresses review feedback on a target PR and
+syncs the stack. All three file novel learnings as they go (each round,
+each report, or each fix cycle for the PR skill), so later work reviews
+against what the earlier work learned.
 Each skill body runs in **Muse**, **Claude Code**, **Codex**, and
 **Antigravity/Gemini**.
 
@@ -17,6 +19,11 @@ Each skill body runs in **Muse**, **Claude Code**, **Codex**, and
 - `skills/agent-review-loop/thematic-review-pillars.md`: the stable base
   pillars (8 categories). Loops read it; they never edit it.
 - `skills/agent-review-loop/agents/openai.yaml`: Codex display metadata
+  (ignored by other runtimes).
+- `skills/agent-review-report/SKILL.md`: the report-only skill (one `max`
+  review over the working diff or a target PR, findings to the user,
+  PR posts only with explicit approval).
+- `skills/agent-review-report/agents/openai.yaml`: Codex display metadata
   (ignored by other runtimes).
 - `skills/address-pr-comments/SKILL.md`: the PR feedback skill (fetch and
   triage comments, apply fixes, sync stacked PRs, file learnings).
@@ -49,24 +56,26 @@ refinements file. Pick targets to install fewer:
 ./install.sh --dry-run               # print what would change; change nothing
 ```
 
-Each flag installs both skills under its directory:
+Each flag installs all three skills under its directory:
 
 | Flag | Directory |
 |---|---|
-| `--agents` | `~/.agents/skills/{agent-review-loop,address-pr-comments}` (canonical store) |
-| `--muse` | `$XDG_CONFIG_HOME/muse/skills/{agent-review-loop,address-pr-comments}` (`~/.config` by default) |
-| `--claude` | `~/.claude/skills/{agent-review-loop,address-pr-comments}` |
-| `--codex` | `~/.codex/skills/{agent-review-loop,address-pr-comments}` |
-| `--antigravity` | `~/.gemini/config/skills/{agent-review-loop,address-pr-comments}` |
+| `--agents` | `~/.agents/skills/{agent-review-loop,agent-review-report,address-pr-comments}` (canonical store) |
+| `--muse` | `$XDG_CONFIG_HOME/muse/skills/{agent-review-loop,agent-review-report,address-pr-comments}` (`~/.config` by default) |
+| `--claude` | `~/.claude/skills/{agent-review-loop,agent-review-report,address-pr-comments}` |
+| `--codex` | `~/.codex/skills/{agent-review-loop,agent-review-report,address-pr-comments}` |
+| `--antigravity` | `~/.gemini/config/skills/{agent-review-loop,agent-review-report,address-pr-comments}` |
 
 Restart the agent (or start a new session) after installing, then invoke:
 
 ```text
 /agent-review-loop [low|medium|high|max]
+/agent-review-report [pr_number_or_url]
 /address-pr-comments [<pr_number_or_url>]
 ```
 
-Default effort is `high`. The agent-neutral name sits alongside any
+Default effort for `agent-review-loop` is `high` (`agent-review-report`
+always runs at `max`). The agent-neutral name sits alongside any
 existing `review-fix-loop` skill without collision.
 
 ## Upgrade
@@ -90,16 +99,16 @@ refresh only. Run with `--dry-run` first to preview what would change.
 
 ## The Shared Pillars File
 
-Loops file learnings under 8 fixed pillars (low-level safety, concurrency,
-error propagation, portability, numerical robustness, pipeline completeness,
-performance, simplification). Resolution order:
+Loops file learnings under 8 fixed pillars (functional correctness,
+security, concurrency, error handling, interface contracts, performance, code
+simplification, and testing/observability). Resolution order:
 
 1. `$REVIEW_REFINEMENTS_FILE` when set (explicit override).
-2. Canonical `~/.agents/review-refinements.md` (default target; all four
+2. Repo-local `.agents/review-refinements.md` (project specific; additive).
+3. Canonical `~/.agents/review-refinements.md` (default target; all four
    runtimes read and write it).
-3. Legacy `~/.gemini/review-refinements.md` (read only; existing files keep
-   working, new bullets go to the canonical path).
-4. Repo-local `.agents/review-refinements.md` (project specific; additive).
+4. Legacy `~/.gemini/review-refinements.md` (read only when
+   `$REVIEW_REFINEMENTS_LEGACY=1` is set; skipped by default).
 
 Multi-agent safety is built into the skill: one write target, a fresh read
 immediately before every edit, tool-agnostic bullets with no signatures,
@@ -108,7 +117,9 @@ per round (5 per loop run). Pillar numbers and titles are a frozen
 contract across loops.
 Repo-specific lessons bootstrap a repo-local `.agents/review-refinements.md`
 on demand, so each repo's reviews improve with use while general principles
-accumulate in the canonical file.
+accumulate in the canonical file. Standing rule: every bullet in canonical must
+help a review in a different repo on a different stack; if it cannot be stated
+that generally, abstract it or file it repo-local.
 
 ## Idempotency
 
@@ -117,8 +128,9 @@ accumulate in the canonical file.
   checked-out version, so keep local edits elsewhere.
 - `~/.agents/review-refinements.md` is created from the template only when
   missing. It is never overwritten, merged, or reformatted. Existing
-  learnings (including a legacy `~/.gemini/review-refinements.md`, which is
-  never touched) survive every reinstall.
+  learnings survive every reinstall. A legacy
+  `~/.gemini/review-refinements.md` file is never touched; set
+  `REVIEW_REFINEMENTS_LEGACY=1` to include it in reviews.
 - `--link` converges too: correct links report `unchanged`, wrong ones are
   repointed, and switching back to a plain `./install.sh` replaces links
   with real copies.
@@ -128,11 +140,11 @@ accumulate in the canonical file.
 ## Uninstall
 
 ```bash
-rm -rf ~/.agents/skills/agent-review-loop ~/.agents/skills/address-pr-comments \
-  "${XDG_CONFIG_HOME:-$HOME/.config}/muse/skills/agent-review-loop" "${XDG_CONFIG_HOME:-$HOME/.config}/muse/skills/address-pr-comments" \
-  ~/.claude/skills/agent-review-loop ~/.claude/skills/address-pr-comments \
-  ~/.codex/skills/agent-review-loop ~/.codex/skills/address-pr-comments \
-  ~/.gemini/config/skills/agent-review-loop ~/.gemini/config/skills/address-pr-comments
+rm -rf ~/.agents/skills/agent-review-loop ~/.agents/skills/agent-review-report ~/.agents/skills/address-pr-comments \
+  "${XDG_CONFIG_HOME:-$HOME/.config}/muse/skills/agent-review-loop" "${XDG_CONFIG_HOME:-$HOME/.config}/muse/skills/agent-review-report" "${XDG_CONFIG_HOME:-$HOME/.config}/muse/skills/address-pr-comments" \
+  ~/.claude/skills/agent-review-loop ~/.claude/skills/agent-review-report ~/.claude/skills/address-pr-comments \
+  ~/.codex/skills/agent-review-loop ~/.codex/skills/agent-review-report ~/.codex/skills/address-pr-comments \
+  ~/.gemini/config/skills/agent-review-loop ~/.gemini/config/skills/agent-review-report ~/.gemini/config/skills/address-pr-comments
 ```
 
 This leaves `~/.agents/review-refinements.md` in place. Delete it as well
@@ -143,9 +155,11 @@ only when you mean to discard your accumulated learnings.
 When a script is not wanted:
 
 ```bash
-mkdir -p ~/.agents/skills/agent-review-loop/agents ~/.agents/skills/address-pr-comments/agents
+mkdir -p ~/.agents/skills/agent-review-loop/agents ~/.agents/skills/agent-review-report/agents ~/.agents/skills/address-pr-comments/agents
 cp skills/agent-review-loop/SKILL.md skills/agent-review-loop/thematic-review-pillars.md ~/.agents/skills/agent-review-loop/
 cp skills/agent-review-loop/agents/openai.yaml ~/.agents/skills/agent-review-loop/agents/
+cp skills/agent-review-report/SKILL.md ~/.agents/skills/agent-review-report/
+cp skills/agent-review-report/agents/openai.yaml ~/.agents/skills/agent-review-report/agents/
 cp skills/address-pr-comments/SKILL.md ~/.agents/skills/address-pr-comments/
 cp skills/address-pr-comments/agents/openai.yaml ~/.agents/skills/address-pr-comments/agents/
 # repeat the copies (or symlink) into any agent dir from the table above

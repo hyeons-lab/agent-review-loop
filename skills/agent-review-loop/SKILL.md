@@ -37,10 +37,11 @@ that same table.
 4. **Verification gate**: everything must compile, the repo's own format and
    static-analysis gates must be clean, and the relevant tests must pass
    before a round or commit counts as complete.
-5. **Pillar stability**: review against the 8 pillars in section 5, step 1
-   by number, exactly as listed. Never substitute a custom pillar set:
-   shared learnings are filed by pillar number, so a renamed set orphans
-   every bullet and the next loop starts blind.
+5. **Pillar stability**: review against the 8 canonical software engineering
+   pillars in section 5, step 1 by number and name, exactly as listed.
+   Never substitute a custom, legacy, or domain-specific pillar set:
+   shared learnings are filed by canonical pillar number and title, so a
+   renamed set orphans every bullet and breaks downstream review loops.
 
 ## 2. Review Depth (Effort Level)
 
@@ -85,12 +86,13 @@ Two tiers, same contract in every runtime:
    audit against the union. On a direct conflict, the more specific file
    wins (repo-local first, then canonical, then legacy):
    - `$REVIEW_REFINEMENTS_FILE` when set (explicit override).
-   - Canonical `~/.agents/review-refinements.md` (default write target;
-     every supported agent reads it).
-   - Legacy `~/.gemini/review-refinements.md` (read only; kept so older
-     loops keep contributing).
    - Repo-local `.agents/review-refinements.md` (project specific; read in
      addition when present).
+   - Canonical `~/.agents/review-refinements.md` (default write target;
+     every supported agent reads it).
+   - Legacy `~/.gemini/review-refinements.md` (read only when
+     `$REVIEW_REFINEMENTS_LEGACY=1` is set; skipped by default so
+     repo-specific inference lessons do not pollute other projects).
 
 ## 4. Diff Extraction and Noise Filtering
 
@@ -102,16 +104,25 @@ Inside a worktree, run every `git` command with `git -C <worktree>`.
 Filter out lockfiles, generated code, and binary artifacts before reviewing:
 
 ```bash
-git --no-pager diff HEAD -- . \
-  ':!*.lock' ':!Cargo.lock' ':!package-lock.json' ':!pnpm-lock.yaml' ':!uv.lock' \
-  ':!target' ':!dist' ':!build' ':!node_modules' \
-  ':!*.onnx*' ':!*.gguf' ':!*.wasm' ':!*.dylib' ':!*.so' ':!*.dll' \
-  ':!**/generated/**' ':!devlog/**' ':!docs/**'
+if git diff --quiet HEAD -- .; then
+  base="$(git merge-base origin/main HEAD 2>/dev/null || git merge-base main HEAD 2>/dev/null || echo "origin/main")"
+  diff_target="${base}...HEAD"
+else
+  diff_target="HEAD"
+fi
+
+diff_file="$(mktemp "${TMPDIR:-/tmp}/agent-review-loop-diff.XXXXXX")"
+git --no-pager diff "${diff_target}" -- . \
+  ':!**/*.lock' ':!**/Cargo.lock' ':!**/package-lock.json' ':!**/pnpm-lock.yaml' ':!**/uv.lock' \
+  ':!**/target/**' ':!**/dist/**' ':!**/build/**' ':!**/node_modules/**' \
+  ':!**/*.onnx*' ':!**/*.gguf' ':!**/*.wasm' ':!**/*.dylib' ':!**/*.so' ':!**/*.dll' \
+  ':!**/generated/**' ':!devlog/**' ':!docs/**' > "$diff_file"
 ```
 
-Save the filtered diff to a scratch file under `/tmp` so reviewers can
-inspect it without context truncation. Never review a diff you have not
-read; never let a reviewer report stand in for reading the changed code.
+Save the filtered diff to a scratch file so reviewers can
+inspect it without context truncation. Clean up the scratch file when the loop
+finishes. Never review a diff you have not read; never let a reviewer report
+stand in for reading the changed code.
 
 ## 5. The Loop Protocol
 
@@ -123,23 +134,38 @@ rounds. Stop with a status report if the cap hits with actionable items left.
 Spawn the review subagents for the chosen effort, then collect every report
 before proceeding. Each reviewer audits the filtered diff plus the
 surrounding source it needs (callers, types, tests, configs) against the
-**8 Core Thematic Pillars**:
+**8 Canonical Thematic Pillars**:
 
-1. Low-Level Safety, Alignment & Buffer Invariants
-2. Concurrency, Cancellation & State Machine Lifecycles
-3. Error Propagation, Diagnostics & No-Panic Invariants
-4. Multiplatform Portability & Cross-Binding Drift
-5. Numerical Robustness & Boundary Validation
-6. Pipeline Completeness & Contract Faithfulness
-7. Performance, SIMD & Resource Efficiency
-8. Code Simplification, Cleanup & Complexity Reduction
+1. Functional Correctness, Logic & Edge Cases
+2. Security, Authentication & Input Sanitization
+3. Concurrency, Asynchrony & Lifecycle Management
+4. Error Handling, Resilience & Diagnostics
+5. Interface Contracts, API Design & Compatibility
+6. Performance, Resource Efficiency & Scalability
+7. Code Simplification, Clean Architecture & Maintainability
+8. Testing, Observability & Verification Invariants
+
+Assign reviewer roles using the exact canonical pillar names:
+- `max` (8 parallel reviewers): one reviewer per pillar, using the exact
+  pillar number and name (e.g. `Reviewer 1: Functional Correctness, Logic & Edge Cases`).
+- `high` (4 parallel reviewers): paired canonical pillars:
+  - Reviewer 1: Pillars 1 & 2 (Correctness & Security)
+  - Reviewer 2: Pillars 3 & 4 (Concurrency & Error Handling)
+  - Reviewer 3: Pillars 5 & 6 (Contracts/API & Performance)
+  - Reviewer 4: Pillars 7 & 8 (Simplification & Testing)
+- `medium` (2 parallel reviewers):
+  - Reviewer 1: Pillars 1-4 (Correctness, Security, Concurrency, Error Handling)
+  - Reviewer 2: Pillars 5-8 (Contracts/API, Performance, Simplification, Testing)
+- `low` (1 reviewer): all 8 canonical pillars.
 
 Use your runtime's row. Every reviewer in the round reports before you
 classify anything. If a reviewer has not reported within the runtime
-default timeout, re-prompt it once; if still silent, proceed with the
-reports in hand, note the missing lens in the round summary, and treat
-its pillars as uncovered next round.
+default timeout, re-prompt it once; if still silent, cancel or terminate the
+subagent if your runtime supports it, proceed with the reports in hand, note
+the missing lens in the round summary, and treat its pillars as uncovered next
+round.
 
+<!-- Mirrored with skills/agent-review-report/SKILL.md: keep runtime rows in sync. -->
 | Runtime | How to spawn one reviewer per lens | How to collect |
 |---|---|---|
 | Muse | `subagent_spawn`, one child per reviewer in a single fan-out | `subagent_wait` on every child before classifying |
@@ -150,16 +176,18 @@ its pillars as uncovered next round.
 
 Every reviewer prompt must include:
 
-- The `/tmp` path of the filtered diff saved in section 4, plus its line
+- The scratch path of the filtered diff saved in section 4, plus its line
   count. The reviewer quotes both back in the report header, so a scope
   mismatch (stale diff, wrong worktree) is visible before anything else.
   Embed the diff text only when it is small enough to fit comfortably.
 - The instruction to read the repo's own guidance first (`AGENTS.md`,
   `CLAUDE.md`, `GEMINI.md`, `.editorconfig`, CI workflows), the bundled base
   pillars, and every shared learnings file that exists.
-- For rounds after the first: the bullets this loop filed in earlier rounds
-  (section 6), quoted verbatim, so reviewers audit against what the loop
-  already learned.
+- For rounds after the first: pass ONLY the bullets newly added or refined
+  during THIS review loop run (tracked in your round summaries), quoted
+  verbatim under their canonical pillar number and title
+  (for example: `Bullets filed this loop: - Pillar 1: Title: ...`).
+  Do not pass pre-existing bullets from the refinements file into this list.
 - A read-only rule: reviewers report findings and edit nothing.
 - An execution rule: behavior claims must be checked by running the repo's
   own tests or a minimal reproduction, quoted as command plus result. A
@@ -232,14 +260,16 @@ Report between rounds, briefly:
 - **Fixes applied**: files and what changed.
 - **Verification status**: gates run and their results.
 - **Learnings filed**: pillar bullets added or refined this round (with
-  pillar numbers), or `none` with one line on why the round taught nothing
-  durable.
+  canonical pillar numbers and titles), or `none` with one line on why the
+  round taught nothing durable.
 
 Then file this round's learnings immediately, per section 6. Do not batch
 them for loop end: the next round's reviewers read them (Step 1), so each
-round reviews against what the previous rounds learned. Filing is part of
-the round; a round is not complete until its learnings are filed or
-explicitly skipped as non-novel.
+round reviews against what the previous rounds learned. Filing is a mandatory
+step of the round: you must use your file editing tool to write or refine the
+bullets in the target refinements file on disk before advancing. A round is
+not complete until its learnings are written to disk or explicitly skipped
+as non-novel.
 
 ### Step 7: Advance
 
@@ -253,8 +283,10 @@ round's reviewers read what earlier rounds filed, so the loop gets sharper
 while it runs instead of only the next loop. When the stop condition is met
 (or the cap forces a stop), run one final sweep for loop-level lessons only
 (patterns visible across rounds but in no single round). Several agents
-share this file, so the target selection and the fresh-read rule below are
-load bearing.
+share this file, so the target selection, fresh-read rule, and placement
+discipline below are load bearing.
+
+### Target Selection Order
 
 Pick the write target in order:
 
@@ -267,43 +299,60 @@ Pick the write target in order:
    repo, general principles accumulate in the canonical file. Do not commit
    the repo-local file on your own; include it only in a commit the user
    explicitly approved.
-3. Otherwise the canonical `~/.agents/review-refinements.md`. When it does
-   not exist yet, create it with the 8 `### Pillar N:` headings (copy their
-   exact titles from the bundled base pillars file), then append.
-4. Never write the legacy `~/.gemini/review-refinements.md` path. Older
-   loops may still append there; this loop only reads it. Routing all new
-   writes through one target keeps learnings from splitting across files.
+3. Otherwise the canonical `~/.agents/review-refinements.md`. Standing rule:
+   every filed bullet must help a review in a different repo on a different
+   stack; if it cannot be stated that generally, abstract it or file it
+   repo-local. When canonical does not exist yet, create it with the 8
+   `### Pillar N:` headings (copy their exact titles from the bundled base
+   pillars file), then append.
+4. Never write the legacy `~/.gemini/review-refinements.md` path. It is read
+   only when `$REVIEW_REFINEMENTS_LEGACY=1` is set; all new writes go to
+   canonical or repo-local.
 
-Re-read the target file immediately before editing, in the same step as
-the write. Never edit from the copy loaded at round start; another loop
-may have filed bullets since. When a fresh read shows your lesson already
-covered, subsume instead of duplicating.
+### How to Update the Refinements File Correctly
 
-Rules:
+Follow this exact sequence whenever filing learnings:
 
-1. **Subsumption first**: if an existing bullet under a pillar already covers
-   the lesson, refine that bullet instead of adding a sibling.
-2. **Generalize**: write the principle the finding taught (trigger, hazard,
-   fix shape), not the instance. One bullet must help a future review in a
-   different file.
-3. **File under the right pillar**: match the finding to one of the 8
-   `### Pillar N:` sections. Never add a 9th pillar or rename one; every
-   loop addresses pillars by number.
-4. **Stay bounded**: at most 2 new or refined bullets per round, at most 5
-   per loop run including the final sweep. Skip anything already covered,
-   anything repo-specific trivia, and anything you are not confident will
-   recur.
-5. **Append-only discipline**: add or refine bullets only. Never delete or
-   rewrite another loop's bullets, and never reformat the file.
-6. **Tool-agnostic bullets**: state trigger, hazard, and fix shape. Never
-   name an agent, model, runtime, or assistant tool in a bullet.
-7. **No signatures**: no author, date, or source tags on bullets. Shared
-   history lives outside the file.
-8. **Merge across loops**: when a bullet filed by another loop overlaps
-   yours, extend that bullet's trigger list instead of adding a
-   near-duplicate.
-
-If the round surfaced nothing novel, say so and leave the file untouched.
+1. **Fresh re-read**: View the target file immediately before editing, in the
+   same step as the write. Never edit from a copy loaded at round start;
+   another loop may have filed bullets in the interim.
+2. **Classify under the exact canonical pillar**: Match the lesson to one of
+   the 8 canonical headings:
+   - `### Pillar 1: Functional Correctness, Logic & Edge Cases`
+   - `### Pillar 2: Security, Authentication & Input Sanitization`
+   - `### Pillar 3: Concurrency, Asynchrony & Lifecycle Management`
+   - `### Pillar 4: Error Handling, Resilience & Diagnostics`
+   - `### Pillar 5: Interface Contracts, API Design & Compatibility`
+   - `### Pillar 6: Performance, Resource Efficiency & Scalability`
+   - `### Pillar 7: Code Simplification, Clean Architecture & Maintainability`
+   - `### Pillar 8: Testing, Observability & Verification Invariants`
+   Never invent custom pillar titles, rename a pillar, or add a 9th pillar.
+3. **Subsumption first**: Read existing bullets under that pillar's heading.
+   If an existing bullet already covers the core failure mode, edit that
+   bullet in place to broaden its trigger condition or refine its fix shape.
+   Do not add near-duplicate siblings.
+4. **Format the bullet**: Each bullet must adhere to the exact structure:
+   `- **Title**: Trigger condition (when doing X): hazard or failure mode (Y occurs); fix shape and verification guidance (fix by doing Z, and verify via W).`
+   - Single bullet starting with `- **Title**:`.
+   - Title in Title Case (2 to 5 words).
+   - Domain-neutral trigger, hazard, and fix shape.
+   - Tool-agnostic: never name an agent, model, runtime, or assistant tool.
+   - Zero attribution: no signatures, author tags, dates, or loop IDs.
+   - Punctuation invariants: zero em dashes (U+2014) or `--` / spaced hyphens
+     as punctuation lookalikes. Use standard ASCII punctuation (colons, commas,
+     semicolons, parentheses, periods).
+5. **Exact file placement**:
+   - If refining an existing bullet, replace it in place.
+   - If adding a new bullet, insert it directly under the appropriate
+     `### Pillar N:` heading (below `<!-- Loops append bullets here. -->` or
+     after existing bullets in that section, strictly before the next
+     `### Pillar` heading).
+   - Never append bullets at the end of the file outside a pillar section.
+6. **Immediate read-back**: View the modified lines with a file viewing tool
+   to confirm correct placement, valid markdown, and preserved pillar structure.
+7. **Stay bounded**: At most 2 new or refined bullets per round, at most 5
+   per loop run including the final sweep. If the round surfaced nothing
+   durable or novel, leave the file untouched and report `Learnings filed: none`.
 
 ## 7. Finishing Up
 

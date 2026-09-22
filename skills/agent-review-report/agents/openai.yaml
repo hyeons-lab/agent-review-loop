@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review and Report"
+  short_description: "Run one max-effort review and report findings"
+  default_prompt: "Use $agent-review-report to review the working diff or target PR at max effort and report the findings."

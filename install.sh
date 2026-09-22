@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Install the agent skills (agent-review-loop, address-pr-comments)
-# for Muse, Claude Code, Codex, and Antigravity/Gemini, and seed the
-# shared refinements file.
+# Install the agent skills (agent-review-loop, agent-review-report,
+# address-pr-comments) for Muse, Claude Code, Codex, and
+# Antigravity/Gemini, and seed the shared refinements file.
 #
 # Idempotent: re-running changes nothing when everything is current, and it
 # never overwrites the shared refinements file once it exists.
@@ -27,16 +27,21 @@
 #                     (they follow the canonical copy), and the refinements
 #                     file is never seeded or modified; the canonical store
 #                     is always in scope so linked installs refresh for real
+#                     (it is seeded only by a plain install, never by --upgrade)
 #   --dry-run         print what would change without changing anything
 #   -h, --help        print this help and exit
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SKILLS="agent-review-loop address-pr-comments"
+SKILLS="agent-review-loop agent-review-report address-pr-comments"
 TEMPLATE_SRC="${SCRIPT_DIR}/templates/review-refinements.template.md"
 
-CANONICAL_SKILLS_DIR="${HOME}/.agents/skills"
+AGENTS_BASE="${HOME}/.agents/skills"
+MUSE_BASE="${XDG_CONFIG_HOME:-${HOME}/.config}/muse/skills"
+CLAUDE_BASE="${HOME}/.claude/skills"
+CODEX_BASE="${HOME}/.codex/skills"
+ANTIGRAVITY_BASE="${HOME}/.gemini/config/skills"
 CANONICAL_REFINEMENTS="${HOME}/.agents/review-refinements.md"
 LEGACY_REFINEMENTS="${HOME}/.gemini/review-refinements.md"
 
@@ -44,7 +49,7 @@ skill_files() {
   # skill_files <skill>: print the bundled files that make up one skill.
   case "$1" in
     agent-review-loop) printf 'SKILL.md thematic-review-pillars.md agents/openai.yaml\n' ;;
-    address-pr-comments) printf 'SKILL.md agents/openai.yaml\n' ;;
+    agent-review-report|address-pr-comments) printf 'SKILL.md agents/openai.yaml\n' ;;
     *) printf 'ERROR: unknown skill: %s\n' "$1" >&2; return 1 ;;
   esac
 }
@@ -87,8 +92,12 @@ err() {
 copy_atomic() {
   # copy_atomic <src> <dest>: copy via temp file plus rename.
   local src="$1" dest="$2" tmp
-  tmp="${dest}.tmp.$$"
-  if cp "${src}" "${tmp}" && mv "${tmp}" "${dest}"; then
+  if [ -d "${dest}" ]; then
+    err "ERROR: destination is an existing directory: ${dest}"
+    return 1
+  fi
+  tmp="$(mktemp "${dest}.tmp.XXXXXX")" || return 1
+  if cp -p "${src}" "${tmp}" && mv -f "${tmp}" "${dest}"; then
     return 0
   fi
   rm -f "${tmp}"
@@ -107,7 +116,7 @@ install_file() {
       printf '[dry-run] replace symlink with file: %s\n' "${dest}"
     else
       log "  replace symlink with file: ${dest}"
-      if rm "${dest}" && copy_atomic "${src}" "${dest}"; then
+      if copy_atomic "${src}" "${dest}"; then
         printf '  updated: %s\n' "${dest}"
       else
         printf '  FAILED to replace: %s (check permissions, then re-run install.sh)\n' "${dest}"
@@ -150,11 +159,13 @@ install_skill_copy() {
     log "  replace symlink with directory: ${dest}"
     rm "${dest}" || return 1
   fi
-  if [ "${DRY_RUN}" -eq 1 ]; then
-    printf '[dry-run] mkdir -p %s %s/agents\n' "${dest}" "${dest}"
-  elif ! mkdir -p "${dest}" "${dest}/agents"; then
-    printf '  FAILED to create directory: %s\n' "${dest}"
-    return 1
+  if [ ! -d "${dest}/agents" ]; then
+    if [ "${DRY_RUN}" -eq 1 ]; then
+      printf '[dry-run] mkdir -p %s/agents\n' "${dest}"
+    elif ! mkdir -p "${dest}/agents"; then
+      printf '  FAILED to create directory: %s\n' "${dest}"
+      return 1
+    fi
   fi
   files="$(skill_files "${skill}")" || return 1
   for file in ${files}; do
@@ -167,12 +178,12 @@ install_skill_link() {
   local skill="$1" dest="$2"
   local canonical="${AGENTS_BASE}/${skill}"
   log "==> Skill (link): ${skill} ${dest} -> ${canonical}"
-  if [ "${DRY_RUN}" -eq 1 ]; then
-    printf '[dry-run] link %s -> %s\n' "${dest}" "${canonical}"
-    return 0
-  fi
   if [ -L "${dest}" ] && [ "$(readlink "${dest}")" = "${canonical}" ]; then
     printf '  unchanged: %s\n' "${dest}"
+    return 0
+  fi
+  if [ "${DRY_RUN}" -eq 1 ]; then
+    printf '[dry-run] link %s -> %s\n' "${dest}" "${canonical}"
     return 0
   fi
   if ! is_missing "${dest}"; then
@@ -193,6 +204,10 @@ install_skill_link() {
 
 seed_refinements() {
   log "==> Shared refinements: ${CANONICAL_REFINEMENTS}"
+  if [ -f "${LEGACY_REFINEMENTS}" ]; then
+    log "  note: legacy ${LEGACY_REFINEMENTS} exists and stays in place;"
+    log "  set REVIEW_REFINEMENTS_LEGACY=1 to include it in reviews."
+  fi
   if ! is_missing "${CANONICAL_REFINEMENTS}"; then
     log "  kept existing file (never overwritten)"
     return 0
@@ -214,27 +229,28 @@ seed_refinements() {
     fi
     log "  seeded from template (edit freely; future runs keep it)"
   fi
-  if [ -f "${LEGACY_REFINEMENTS}" ]; then
-    log "  note: legacy ${LEGACY_REFINEMENTS} exists and stays in place;"
-    log "  the skill reads it as a fallback and writes new bullets here."
-  fi
 }
 
 verify_skill() {
   # verify_skill <skill> <dest_dir>: confirm the install is loadable.
   # Paths are tested through ${dest} itself so relative symlinks resolve
   # against the link's directory (never the CWD), with no readlink needed.
-  local skill="$1" dest="$2"
+  local skill="$1" dest="$2" file
   if [ ! -f "${dest}/SKILL.md" ]; then
     printf '  MISSING: %s (no SKILL.md; reinstall, or check the link target)\n' "${dest}"
     return 1
   fi
-  if grep -qxF "name: ${skill}" "${dest}/SKILL.md"; then
-    printf '  ok: %s\n' "${dest}"
-  else
+  if ! grep -qxF "name: ${skill}" "${dest}/SKILL.md"; then
     printf '  INVALID: %s (SKILL.md name mismatch; expected %s)\n' "${dest}" "${skill}"
     return 1
   fi
+  for file in $(skill_files "${skill}"); do
+    if [ ! -f "${dest}/${file}" ]; then
+      printf '  MISSING: %s (missing bundled file: %s)\n' "${dest}" "${file}"
+      return 1
+    fi
+  done
+  printf '  ok: %s\n' "${dest}"
 }
 
 upgrade_skill() {
@@ -279,19 +295,6 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-if [ -z "${TARGETS}" ]; then
-  TARGETS="agents muse claude codex antigravity"
-fi
-# Deduplicate while keeping order.
-TARGETS="$(printf '%s\n' ${TARGETS} | awk '!seen[$0]++' | tr '\n' ' ')"
-
-# Resolve target dirs (Muse honors XDG_CONFIG_HOME).
-MUSE_BASE="${XDG_CONFIG_HOME:-${HOME}/.config}/muse/skills"
-CLAUDE_BASE="${HOME}/.claude/skills"
-CODEX_BASE="${HOME}/.codex/skills"
-ANTIGRAVITY_BASE="${HOME}/.gemini/config/skills"
-AGENTS_BASE="${CANONICAL_SKILLS_DIR}"
-
 for skill in ${SKILLS}; do
   if [ ! -f "${SCRIPT_DIR}/skills/${skill}/SKILL.md" ]; then
     err "ERROR: skill source not found: ${SCRIPT_DIR}/skills/${skill}/SKILL.md"
@@ -310,9 +313,13 @@ fi
 # Link mode and upgrade both need the canonical store in scope and first:
 # links are created against it, and linked installs refresh through it (a
 # missing canonical copy is still skipped, never newly installed).
-if [ "${LINK_MODE}" -eq 1 ] || [ "${UPGRADE_MODE}" -eq 1 ]; then
-  TARGETS="$(printf 'agents\n%s\n' ${TARGETS} | awk '!seen[$0]++' | tr '\n' ' ')"
+if [ -z "${TARGETS}" ]; then
+  TARGETS="agents muse claude codex antigravity"
+elif [ "${LINK_MODE}" -eq 1 ] || [ "${UPGRADE_MODE}" -eq 1 ]; then
+  TARGETS="agents ${TARGETS}"
 fi
+# Deduplicate while keeping order.
+TARGETS="$(printf '%s\n' ${TARGETS} | awk '!seen[$0]++' | tr '\n' ' ')"
 
 failures=0
 for skill in ${SKILLS}; do
@@ -354,4 +361,4 @@ if [ "${failures}" -gt 0 ]; then
   log "Completed with ${failures} problem(s)."
   exit 1
 fi
-log "Done. Invoke with /agent-review-loop [low|medium|high|max] or /address-pr-comments <pr> in any supported agent."
+log "Done. Invoke with /agent-review-loop [low|medium|high|max], /agent-review-report [<pr>], or /address-pr-comments [<pr>] in any supported agent."

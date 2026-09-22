@@ -2,8 +2,8 @@
 
 This document defines the **8 Core Thematic Pillars** (the defaults) and the
 **self-improvement protocol** shared by every review loop that files
-learnings into the refinements file (`review-fix-loop` in any runtime,
-`review-and-report`, and `address-pr-comments`).
+learnings into the refinements file (`agent-review-loop`,
+`agent-review-report`, and `address-pr-comments`).
 
 It travels with the skill and stays stable. Automated learning never edits
 this file; it writes to the Tier 2 file instead.
@@ -19,9 +19,17 @@ this file; it writes to the Tier 2 file instead.
    synthesized from real reviews. Resolution order (read every file that
    exists; the more specific file wins a direct conflict):
    - `$REVIEW_REFINEMENTS_FILE` when set (explicit override).
+   - Repo-local `.agents/review-refinements.md` (project-specific invariants).
    - Canonical `~/.agents/review-refinements.md` (default write target).
-   - Legacy `~/.gemini/review-refinements.md` (read only).
-   - Repo-local `.agents/review-refinements.md` (project specific).
+   - Legacy `~/.gemini/review-refinements.md` (read only when
+     `$REVIEW_REFINEMENTS_LEGACY=1` is set; skipped by default). Note that
+     legacy entries follow pre-generalization pillar numbering (such as
+     Buffer Safety and Numerical Robustness) rather than the canonical 8
+     categories below.
+
+   Standing rule: every bullet in the canonical file must help a review in a
+   different repo on a different stack. Repo-specific lessons belong in the
+   repo-local file.
 
 ## 2. The 8 Core Categories (Pillars)
 
@@ -29,69 +37,79 @@ Reviewers evaluate changes across these 8 areas. The `### Pillar N:` titles
 below are exact: refinements files reuse them verbatim, and loops address
 pillars by number. Never rename a pillar or add a 9th one.
 
-### Pillar 1: Low-Level Safety, Alignment & Buffer Invariants
+### Pillar 1: Functional Correctness, Logic & Edge Cases
 
-- Memory alignment and safe slice casting (checked casts with fallbacks over
-  panic-prone direct casts on unaligned or memory-mapped buffers).
-- Bounded reads and writes: capped stream decoding, guarded empty or
-  zero-byte allocations, padded chunk remainders, and verified buffer
-  extents before slicing across trust or language boundaries.
+- Algorithmic and logic integrity: verify algorithm accuracy, control flow
+  branching, and state mutation; prevent off-by-one errors, faulty boolean
+  conditions, and unexpected calculation outputs.
+- Edge-case and boundary robustness: guard against null, nil, or undefined
+  references, empty collections, zero-length inputs, and boundary overflow;
+  enforce explicit defaults and defensive lookups over unchecked access.
 
-### Pillar 2: Concurrency, Cancellation & State Machine Lifecycles
+### Pillar 2: Security, Authentication & Input Sanitization
 
-- Cancellation and shutdown lifecycles: reset latches at session entry,
-  resolve every pending promise on error paths, and tear down workers,
-  timers, and leases without leaks or use-after-free.
-- Contention and ordering: batch queries under one lock acquisition, bound
-  IPC timeouts with graceful fallback, and keep monotonic sequences intact
-  across restarts and handovers.
+- Input containment and injection prevention: sanitize and parameterize all
+  untrusted inputs entering shells, queries, file systems, deserializers, or
+  template engines; reject path traversal and metacharacter escapes.
+- Authentication and boundary authorization: enforce privilege boundaries,
+  validate access credentials, avoid insecure direct object references, and
+  ensure sensitive data and tokens are redacted from diagnostics and logs.
 
-### Pillar 3: Error Propagation, Diagnostics & No-Panic Invariants
+### Pillar 3: Concurrency, Asynchrony & Lifecycle Management
 
-- No-panic runtime paths: return typed errors (`Result`, `?`, or the
-  language equivalent) instead of force-unwrapping values that untrusted
-  input can influence.
-- Persistence and diagnostics: atomic file writes (temp file plus rename),
-  explicit permission modes, and errors that name the failing resource and
-  the recovery path.
+- Task cancellation and guaranteed cleanup: tie resource disposal to RAII drop
+  guards, defer statements, or finally blocks; reset cancellation latches on
+  session entry; resolve pending promises or futures on error unwinding; and
+  terminate worker routines without leaks.
+- Synchronization and contention discipline: avoid data races and deadlocks
+  through clear lock hierarchy and minimal critical sections; enforce bounded
+  timeouts with graceful fallbacks across external network, IPC, and service
+  boundaries.
 
-### Pillar 4: Multiplatform Portability & Cross-Binding Drift
+### Pillar 4: Error Handling, Resilience & Diagnostics
 
-- Foreign binding sync: generated bindings (FFI, WASM, mobile, typed
-  clients) regenerated and drift-checked whenever the source surface moves.
-- Portable builds: stable toolchain features by default, feature-gated
-  platform code, and no hardcoded page sizes, paths, or OS identities.
+- Safe, typed error propagation: return typed, inspectable errors instead of
+  force-unwrapping, throwing raw strings, panicking, or swallowing exceptions
+  in runtime paths.
+- Atomic persistence and diagnostic clarity: stage file and state mutations
+  through temporary writes followed by atomic renames; emit actionable error
+  messages that identify the failing resource and the recovery path.
 
-### Pillar 5: Numerical Robustness & Boundary Validation
+### Pillar 5: Interface Contracts, API Design & Compatibility
 
-- Finite, in-range arithmetic: finiteness checks on floats that feed
-  decisions, nonzero positive denominators, and saturating or checked
-  integer math on sizes, offsets, and capacities.
-- Clamped boundaries: inputs and config values validated against the tables
-  and buffers they index before use.
+- Contract parameter fidelity and encapsulation: ensure options, configurations,
+  and context headers pass cleanly through architecture layers without silent
+  dropping or defaulting surprises; keep public surfaces cohesive and minimal.
+- Schema synchronization and backwards compatibility: derive schemas and
+  cross-boundary bindings from a single source of truth; preserve backward
+  compatibility or provide clear migration paths across API version shifts.
 
-### Pillar 6: Pipeline Completeness & Contract Faithfulness
+### Pillar 6: Performance, Resource Efficiency & Scalability
 
-- End-to-end parameter fidelity: sampling, filtering, and config options
-  forwarded unchanged through every pipeline stage to the kernel that
-  honors them.
-- Traversal and isolation guards: shell metacharacters, path escapes, and
-  credential scopes contained at each stage boundary.
+- Hot-path allocation and memory discipline: avoid unnecessary heap allocations,
+  excessive object cloning, and intermediate buffer copies in throughput-critical
+  paths; pre-allocate and reuse scratch buffers where workloads are regular.
+- Workload batching and I/O efficiency: batch fine-grained database queries,
+  file operations, and network calls; apply backpressure to incoming streams;
+  and bound connection and thread pool growth.
 
-### Pillar 7: Performance, SIMD & Resource Efficiency
+### Pillar 7: Code Simplification, Clean Architecture & Maintainability
 
-- Hot-path allocation discipline: pre-allocated and reused scratch buffers,
-  eliminated staging copies, and vectorized kernels where the workload is
-  regular.
-- Right-sized dispatch: threaded or batched work split to amortize launch
-  cost without starving interactive or priority lanes.
+- Linear control flow and minimal indirection: favor early return guard clauses
+  over deeply nested conditionals; avoid premature abstractions and excessive
+  indirection that obscure business logic; use standard library idioms.
+- Dead code elimination and canonical consolidation: remove obsolete code,
+  unused dependencies, and redundant boilerplate; maintain one canonical
+  helper per repeated pattern.
 
-### Pillar 8: Code Simplification, Cleanup & Complexity Reduction
+### Pillar 8: Testing, Observability & Verification Invariants
 
-- Flattened structure: guard clauses over nested conditionals, standard
-  combinators over manual loops, and no premature abstraction layers.
-- Removed dead weight: deleted obsolete code, deduplicated boilerplate, and
-  one canonical helper per repeated pattern.
+- Non-vacuous testing and regression coverage: ensure automated tests exercise
+  actual behavior and fail when defects are introduced; prove test non-vacuity;
+  cover boundary failure paths and regression scenarios.
+- Observability and compliance verification: structure application telemetry,
+  metrics, and audit logging to provide actionable operational insight; verify
+  license attribution and compliance terms align with shipped code.
 
 ## 3. Self-Improvement Protocol
 
@@ -105,7 +123,9 @@ When a review loop learns a recurring pattern worth keeping:
    overlapping bullet instead of adding a sibling.
 3. **Generalization**: abstract away file names, line numbers, and variable
    names. State trigger, hazard, and fix shape so the bullet helps a future
-   review in a different file.
+   review in a different file. Standing rule for canonical: the bullet must
+   help a review in a different repo on a different stack; if it cannot be
+   stated that generally, abstract it or file it repo-local.
 4. **Theme clustering**: merge related micro-issues into one cohesive
    principle. Cap each loop run at 5 new or refined bullets.
 5. **Multi-agent safety**: re-read the target file immediately before

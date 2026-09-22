@@ -85,17 +85,23 @@ then fetch:
 # Resolve once: canonical number plus the triage SHA for the summary
 gh pr view <pr_input> --json number,headRefOid --jq '"number: \(.number)", "triage_sha: \(.headRefOid)"' || { echo "ERROR: PR resolve failed; check the number or URL and gh auth"; exit 1; }
 
+scratch_dir="$(mktemp -d "${TMPDIR:-/tmp}/pr-comments.XXXXXX")" || { echo "ERROR: failed to create scratch directory; check TMPDIR permissions and disk space" >&2; exit 1; }
+trap 'rm -rf "${scratch_dir:?}"' EXIT
+
 # Inline diff comments
-gh api /repos/{owner}/{repo}/pulls/<pr_number>/comments > /tmp/pr-diff-comments.json || { echo "ERROR: diff-comment fetch failed; check the PR number and gh auth"; exit 1; }
-jq -r '.[] | "DIFF [\(.id)] \(.path):\(.line) by \(.user.login):\n\(.body)\n"' /tmp/pr-diff-comments.json || { echo "ERROR: diff-comment render failed; check jq and the JSON payload"; exit 1; }
+gh api /repos/{owner}/{repo}/pulls/<pr_number>/comments > "${scratch_dir}/diff-comments.json" || { echo "ERROR: diff-comment fetch failed; check the PR number and gh auth"; exit 1; }
+jq -r '.[] | "DIFF [\(.id)] \(.path):\(.line) by \(.user.login):\n\(.body)\n"' "${scratch_dir}/diff-comments.json" || { echo "ERROR: diff-comment render failed; check jq and the JSON payload"; exit 1; }
 
 # Submitted review summaries (approve/changes-requested bodies: Copilot, humans)
-gh api /repos/{owner}/{repo}/pulls/<pr_number>/reviews > /tmp/pr-reviews.json || { echo "ERROR: review fetch failed; check the PR number and gh auth"; exit 1; }
-jq -r '.[] | "REVIEW [\(.id)] \(.state) by \(.user.login):\n\(.body)\n"' /tmp/pr-reviews.json || { echo "ERROR: review render failed; check jq and the JSON payload"; exit 1; }
+gh api /repos/{owner}/{repo}/pulls/<pr_number>/reviews > "${scratch_dir}/reviews.json" || { echo "ERROR: review fetch failed; check the PR number and gh auth"; exit 1; }
+jq -r '.[] | "REVIEW [\(.id)] \(.state) by \(.user.login):\n\(.body)\n"' "${scratch_dir}/reviews.json" || { echo "ERROR: review render failed; check jq and the JSON payload"; exit 1; }
 
 # Top-level issue comments (review bots, humans)
-gh api /repos/{owner}/{repo}/issues/<pr_number>/comments > /tmp/pr-issue-comments.json || { echo "ERROR: issue-comment fetch failed; check the PR number and gh auth"; exit 1; }
-jq -r '.[] | "ISSUE [\(.id)] by \(.user.login):\n\(.body)\n"' /tmp/pr-issue-comments.json || { echo "ERROR: issue-comment render failed; check jq and the JSON payload"; exit 1; }
+gh api /repos/{owner}/{repo}/issues/<pr_number>/comments > "${scratch_dir}/issue-comments.json" || { echo "ERROR: issue-comment fetch failed; check the PR number and gh auth"; exit 1; }
+jq -r '.[] | "ISSUE [\(.id)] by \(.user.login):\n\(.body)\n"' "${scratch_dir}/issue-comments.json" || { echo "ERROR: issue-comment render failed; check jq and the JSON payload"; exit 1; }
+
+trap - EXIT
+rm -rf "${scratch_dir}"
 ```
 
 ### B. Categorize the findings
@@ -104,14 +110,14 @@ File every finding under one of the 8 Core Thematic Pillars (titles are
 exact; the sibling `agent-review-loop` skill's base pillars file defines
 them):
 
-1. Low-Level Safety, Alignment & Buffer Invariants
-2. Concurrency, Cancellation & State Machine Lifecycles
-3. Error Propagation, Diagnostics & No-Panic Invariants
-4. Multiplatform Portability & Cross-Binding Drift
-5. Numerical Robustness & Boundary Validation
-6. Pipeline Completeness & Contract Faithfulness
-7. Performance, SIMD & Resource Efficiency
-8. Code Simplification, Cleanup & Complexity Reduction
+1. Functional Correctness, Logic & Edge Cases
+2. Security, Authentication & Input Sanitization
+3. Concurrency, Asynchrony & Lifecycle Management
+4. Error Handling, Resilience & Diagnostics
+5. Interface Contracts, API Design & Compatibility
+6. Performance, Resource Efficiency & Scalability
+7. Code Simplification, Clean Architecture & Maintainability
+8. Testing, Observability & Verification Invariants
 
 Read the base pillars from the sibling `agent-review-loop` skill directory
 when it is installed alongside this one
@@ -162,13 +168,14 @@ immediately. Later cycles in the same run read what earlier cycles filed,
 so the same class of miss is caught locally the second time.
 
 When CI catches something local review missed, file the lesson in the
-shared refinements file both skills read. Resolution order for reading
+shared refinements file every skill reads. Resolution order for reading
 (the more specific file wins a direct conflict):
 
 - `$REVIEW_REFINEMENTS_FILE` when set (explicit override).
-- Canonical `~/.agents/review-refinements.md` (default write target).
-- Legacy `~/.gemini/review-refinements.md` (read only).
 - Repo-local `.agents/review-refinements.md` (project specific).
+- Canonical `~/.agents/review-refinements.md` (default write target).
+- Legacy `~/.gemini/review-refinements.md` (read only when
+  `$REVIEW_REFINEMENTS_LEGACY=1` is set; skipped by default).
 
 Pick the write target in order:
 
@@ -179,35 +186,56 @@ Pick the write target in order:
    `### Pillar N:` headings when it does not exist yet. Do not commit the
    repo-local file on your own; include it only in a commit the user
    explicitly approved.
-3. Otherwise the canonical `~/.agents/review-refinements.md`. When it does
-   not exist yet, create it with the 8 `### Pillar N:` headings, then
-   append.
-4. Never write the legacy `~/.gemini/review-refinements.md` path.
+3. Otherwise the canonical `~/.agents/review-refinements.md`. Standing rule:
+   every filed bullet must help a review in a different repo on a different
+   stack; if it cannot be stated that generally, abstract it or file it
+   repo-local. When it does not exist yet, create it with the 8
+   `### Pillar N:` headings, then append.
+4. Never write the legacy `~/.gemini/review-refinements.md` path. It is read
+   only when `$REVIEW_REFINEMENTS_LEGACY=1` is set; all new writes go to
+   canonical or repo-local.
 
-Re-read the target file immediately before editing, in the same step as
-the write. Never edit from a stale copy; another loop may have filed
-bullets since.
+When updating the target refinements file, follow this protocol strictly:
 
-Rules:
-
-1. **Subsumption first**: if an existing bullet under a pillar already
-   covers the lesson, refine that bullet instead of adding a sibling.
-2. **Generalize**: write the principle the finding taught (trigger,
-   hazard, fix shape), not the instance. One bullet must help a future
-   review in a different file.
-3. **Higher-order abstraction**: when several specific checks are
-   variations of one concept, synthesize them into a single principle
-   rather than filing each one.
-4. **File under the right pillar**: match the finding to one of the 8
-   `### Pillar N:` sections. Never add a 9th pillar or rename one.
-5. **Stay bounded**: at most 2 new or refined bullets per cycle, at most 5
-   per run. Skip anything already covered, anything repo-specific trivia,
-   and anything you are not confident will recur.
-6. **Append-only discipline**: add or refine bullets only. Never delete or
-   rewrite another loop's bullets, and never reformat the file.
-7. **Tool-agnostic bullets**: state trigger, hazard, and fix shape. Never
-   name an agent, model, runtime, or assistant tool in a bullet.
-8. **No signatures**: no author, date, or source tags on bullets.
+1. **Fresh read**: View the target refinements file with your file viewing
+   tool in the exact same turn as your edit. Never work from memory or a
+   previous turn's read.
+2. **Classify under the canonical 8 pillars**: Map the novel finding to
+   one of the 8 canonical pillar sections by number and exact title:
+   - `### Pillar 1: Functional Correctness, Logic & Edge Cases`
+   - `### Pillar 2: Security, Authentication & Input Sanitization`
+   - `### Pillar 3: Concurrency, Asynchrony & Lifecycle Management`
+   - `### Pillar 4: Error Handling, Resilience & Diagnostics`
+   - `### Pillar 5: Interface Contracts, API Design & Compatibility`
+   - `### Pillar 6: Performance, Resource Efficiency & Scalability`
+   - `### Pillar 7: Code Simplification, Clean Architecture & Maintainability`
+   - `### Pillar 8: Testing, Observability & Verification Invariants`
+   Never invent custom pillar titles, rename a pillar, or add a 9th pillar.
+3. **Subsumption first**: Read existing bullets under that pillar's heading.
+   If an existing bullet already covers the core failure mode, edit that
+   bullet in place to broaden its trigger condition or refine its fix shape.
+   Do not add near-duplicate siblings.
+4. **Format the bullet**: Each bullet must adhere to the exact structure:
+   `- **Title**: Trigger condition (when doing X): hazard or failure mode (Y occurs); fix shape and verification guidance (fix by doing Z, and verify via W).`
+   - Single bullet starting with `- **Title**:` (2 to 5 words in Title Case).
+   - Domain-neutral trigger, hazard, and fix shape.
+   - Tool-agnostic: never name an agent, model, runtime, or assistant tool.
+   - Zero attribution: no signatures, author tags, dates, or loop IDs.
+   - Punctuation invariants: zero em dashes (U+2014) or `--` / spaced hyphens
+     as punctuation lookalikes. Use standard ASCII punctuation (colons, commas,
+     semicolons, parentheses, periods).
+5. **Exact file placement**:
+   - If refining an existing bullet, replace it in place.
+   - If adding a new bullet, insert it directly under the appropriate
+     `### Pillar N:` heading (below `<!-- Loops append bullets here. -->` or
+     after existing bullets in that section, strictly before the next
+     `### Pillar` heading).
+   - Never append bullets at the end of the file outside a pillar section.
+6. **Immediate read-back**: View the modified lines with a file viewing tool
+   to confirm correct placement, valid markdown, and preserved pillar structure.
+7. **Stay bounded**: At most 2 new or refined bullets per fix cycle, at most 5
+   per PR run. If the cycle surfaced nothing durable or novel, leave the file
+   untouched.
 
 ---
 
@@ -271,7 +299,7 @@ Rules:
      out=$(gh pr checks <pr_number> --json name,bucket); rc=$?
      if [ $rc -ne 0 ] && ! echo "$out" | jq -e . >/dev/null 2>&1; then echo "WARNING: checks fetch failed (attempt $i of 30); retrying"; sleep 60; continue; fi
      printf '%s\n' "$out"
-     settle=$(echo "$out" | jq -r '[.[].bucket] | if any(. == "pending") then "wait" else "done" end') || { echo "WARNING: checks parse failed (attempt $i of 30); retrying"; sleep 60; continue; }
+     settle=$(echo "$out" | jq -r 'if length == 0 or any(.[].bucket; . == "pending") then "wait" else "done" end') || { echo "WARNING: checks parse failed (attempt $i of 30); retrying"; sleep 60; continue; }
      [ "$settle" = "done" ] && break
      if [ "$i" -lt 30 ]; then sleep 60; fi
    done
