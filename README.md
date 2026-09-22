@@ -70,7 +70,7 @@ Restart the agent (or start a new session) after installing, then invoke:
 
 ```text
 /agent-review-loop [low|medium|high|max]
-/agent-review-report [pr_number_or_url]
+/agent-review-report [<pr_number_or_url>]
 /agent-review-pr-comments [<pr_number_or_url>]
 ```
 

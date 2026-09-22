@@ -25,6 +25,12 @@
 - 2026-09-21T22:38-07:00 Prefix all skills under agent-review- namespace: Renamed address-pr-comments to agent-review-pr-comments, unifying the suite into /agent-review-loop, /agent-review-report, and /agent-review-pr-comments.
 - 2026-09-21T22:40-07:00 Support seamless legacy skill migration under upgrade: Added legacy_skill_name mapping and migration logic in install.sh so ./install.sh --upgrade detects previous address-pr-comments installs, migrates them to agent-review-pr-comments, updates them, and removes obsolete directories.
 - 2026-09-21T22:50-07:00 Automatic timestamped backups and accumulation pruning prompts: Required review agents to create timestamped snapshots in backups/ before editing review-refinements.md, use surgical chunk replacement scoped to single pillars, verify the 8-pillar structural invariant, and ask the user before pruning older backups when they accumulate beyond 5 snapshots.
+- 2026-09-21T23:57-07:00 Extract canonical cleanup helper for legacy skills: Consolidated repetitive migration and legacy removal logic in install.sh into a single helper with early return guards, eliminating duplicate code across install_skill_copy, install_skill_link, and upgrade_skill.
+- 2026-09-21T23:57-07:00 Defer legacy cleanup until after destination success: In installer copy and link modes, deferred unlinking legacy files until after the destination files are fully written and verified, preventing destructive data loss if installation aborts mid-flight.
+- 2026-09-21T23:57-07:00 Prevent vacuous absence checks on dangling symlinks: Defined is_missing in verify-install.sh asserting both [ ! -e "$1" ] and [ ! -L "$1" ], ensuring dangling symlinks fail test assertions rather than silently passing ! -e.
+- 2026-09-21T23:57-07:00 Assert disk immutability via content equality: Added content equality checks in dry-run tests to verify destination files remain unaltered rather than solely relying on file existence.
+- 2026-09-21T23:57-07:00 Rollback refinements state on invariant violations: Scoped pre-modification backup paths in skill update protocols and mandated restoring the backup snapshot if the 8-pillar structural invariant fails.
+
 
 ## What Changed
 
@@ -105,6 +111,15 @@
 - 2026-09-21T22:45-07:00 `templates/review-refinements.template.md`: Documented backup preservation rules, surgical editing, and pruning threshold.
 - 2026-09-21T22:45-07:00 `~/.agents/review-refinements.md`: Added header instructions for timestamped backups, chunk-level editing, structural invariants, and pruning threshold prompt.
 - 2026-09-21T22:45-07:00 `README.md`: Documented automatic timestamped backups and maintenance under Shared Pillars File.
+- 2026-09-21T23:57-07:00 `install.sh`: Consolidated legacy migration cleanup into canonical cleanup_legacy_skill helper, deferred legacy cleanup until after destination files succeed, emitted planned legacy cleanup in dry-run copy when replacing symlinks, and decoupled target cleanup from missing target migration in upgrade_skill.
+- 2026-09-21T23:57-07:00 `tests/verify-install.sh`: Defined is_missing helper checking both [ ! -e "$1" ] and [ ! -L "$1" ] across test assertions, broadened permission audit to all files via find, added content equality assertions for dry-run immutability, added upgrade dry-run migration tests, and verified symlink reachability.
+- 2026-09-21T23:57-07:00 `skills/agent-review-loop/SKILL.md`: Scoped backup variables, added automatic rollback on structural invariant violation, and ensured scratch diff files are cleaned up at loop completion.
+- 2026-09-21T23:57-07:00 `skills/agent-review-pr-comments/SKILL.md`: Fixed truncated target resolution rule, removed duplicate headers, scoped backup variables, and added automatic rollback on structural invariant violation.
+- 2026-09-21T23:57-07:00 `skills/agent-review-report/SKILL.md`: Scoped backup variables and added automatic rollback on structural invariant violation.
+- 2026-09-21T23:57-07:00 `skills/agent-review-loop/thematic-review-pillars.md`: Scoped backup variables and added automatic rollback on structural invariant violation.
+- 2026-09-21T23:57-07:00 `templates/review-refinements.template.md`: Refined starter bullets across Pillars 1, 3, 4, 7, and 8 to capture boundary isolation, guaranteed cleanup, non-destructive migration, linear control flow, and reachability invariants.
+- 2026-09-21T23:57-07:00 `~/.agents/review-refinements.md`: Evolved active principles across Pillars 1, 3, 4, 7, and 8 incorporating review loop discoveries.
+- 2026-09-21T23:57-07:00 `README.md`: Fixed table formatting in skill reference.
 
 ## Issues
 
@@ -116,5 +131,6 @@
 - a1dd2fe: feat(refinements): codify canonical SWE pillar update protocol for review refinements
 - 063bb3f: fix(review): harden installer, verification harness, and skill lifecycles
 - d1d139a: fix(agent-review-report): scope read-only invariant to code under review
-- HEAD: feat: adopt living document refinements, unified prefix, and automated backups
+- c843fbc: feat: adopt living document refinements, unified prefix, and automated backups
+- HEAD: fix(review): harden legacy migration, test reachability invariants, and rollback handling
 

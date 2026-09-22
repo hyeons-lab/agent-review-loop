@@ -282,14 +282,19 @@ Follow this exact sequence whenever filing learnings:
    same step as the write. Never edit from a copy loaded at review start;
    another loop may have filed bullets in the interim.
 2. **Automatic timestamped backup and accumulation check**:
-   - Before modifying the file, create a timestamped backup snapshot:
+   - Before modifying the file, record the snapshot path and create a timestamped backup snapshot:
      ```bash
      backup_dir="$(dirname "$target")/backups"
-     mkdir -p "$backup_dir"
-     cp -p "$target" "$backup_dir/review-refinements-$(date "+%Y%m%d-%H%M%S").md"
+     backup_snapshot=""
+     if [ -f "$target" ]; then
+       mkdir -p "$backup_dir" || { echo "ERROR: failed to create backup directory: $backup_dir" >&2; exit 1; }
+       backup_snapshot="$backup_dir/review-refinements-$(date "+%Y%m%d-%H%M%S").md"
+       cp -p "$target" "$backup_snapshot" || { echo "ERROR: failed to snapshot $target to $backup_snapshot" >&2; exit 1; }
+     fi
      ```
-   - Check if backups accumulate: count the backup files in `backups/`. If
-     more than 5 backups exist, ask the user in chat whether they would like
+   - Check if backups accumulate: if `[ -d "$backup_dir" ]`, count the backup files in `"$backup_dir"`
+     (for example, `ls -1 "$backup_dir"/review-refinements-*.md 2>/dev/null | wc -l`).
+     If more than 5 backups exist, ask the user in chat whether they would like
      to prune older backups (keeping the latest 5). Never prune or delete
      backups without explicit user confirmation.
 3. **Classify under the exact canonical pillar**: Match the lesson to one of
@@ -306,8 +311,11 @@ Follow this exact sequence whenever filing learnings:
    Every bullet filed in canonical must help across stacks and repositories;
    lessons specific to one repository belong in repo-local refinements.
 4. **Add or merge (living document evolution)**: Read existing bullets under
-   that pillar's heading. For each actionable suggestion, decide whether to
-   merge it into an existing bullet or add it as a new bullet:
+   that pillar's heading. Incorporate all actionable suggestions, optimizations,
+   and durable failure modes without arbitrary numerical quotas. If the review
+   surfaced nothing durable or novel beyond what is already codified, leave the
+   file untouched. Otherwise, for each suggestion, decide whether to merge it
+   into an existing bullet or add it as a new bullet:
    - **Merge**: Actively rewrite existing bullets into broader, higher-level
      principles that synthesize prior lessons and new findings into a cohesive
      rule.
@@ -344,15 +352,11 @@ Follow this exact sequence whenever filing learnings:
    - View the modified lines with a file viewing tool to confirm correct
      placement, valid markdown, and preserved pillar structure.
    - Verify that all 8 `### Pillar` headings remain intact byte-for-byte
-     (`grep -c '^### Pillar' "$target"` must equal 8).
-8. **Incorporate all suggestions with total cleanup**: Every actionable
-   suggestion, optimization, and durable failure mode identified during the
-   review must be incorporated into the refinements store without arbitrary
-   numerical quotas. Add or merge each suggestion into the pillar's bullets,
-   and always perform a clean up pass over the total bullets afterward so the
-   file evolves as an organized living document rather than an uncurated
-   append-only log. If the review surfaced nothing durable or novel beyond
-   what is already codified, leave the file untouched.
+     (`grep -c '^### Pillar' "$target"` must equal 8). If verification fails,
+     immediately roll back structural changes: if a backup snapshot was created
+     in step 2, restore from it (`cp -p "$backup_snapshot" "$target"`); if
+     `$target` was newly created in this cycle, remove it (`rm -f "$target"`),
+     before retrying or reporting failure.
 
 ## 8. Finishing Up
 

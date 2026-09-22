@@ -154,26 +154,38 @@ install_file() {
   fi
 }
 
+cleanup_legacy_skill() {
+  # cleanup_legacy_skill <skill> <dest_dir>: clean up obsolete renamed skill if present.
+  local skill="$1" dest="$2" legacy legacy_dest
+  legacy="$(legacy_skill_name "${skill}" 2>/dev/null)" || return 0
+  legacy_dest="${dest%/*}/${legacy}"
+  if is_missing "${legacy_dest}"; then
+    return 0
+  fi
+  if [ "${DRY_RUN}" -eq 1 ]; then
+    printf '[dry-run] clean up obsolete skill: %s\n' "${legacy_dest}"
+    return 0
+  fi
+  log "  cleaning up obsolete skill: ${legacy_dest}"
+  if ! rm -rf "${legacy_dest}"; then
+    printf '  FAILED to clean up obsolete skill: %s (check permissions)\n' "${legacy_dest}"
+    return 1
+  fi
+}
+
 install_skill_copy() {
   # install_skill_copy <skill> <dest_dir> [label]
   local skill="$1" dest="$2" file src files label="${3:-copy}"
-  local legacy legacy_dest
-  if legacy="$(legacy_skill_name "${skill}" 2>/dev/null)"; then
-    legacy_dest="$(dirname "${dest}")/${legacy}"
-    if [ -e "${legacy_dest}" ] || [ -L "${legacy_dest}" ]; then
-      if [ "${DRY_RUN}" -eq 1 ]; then
-        printf '[dry-run] clean up obsolete skill: %s\n' "${legacy_dest}"
-      else
-        log "  cleaning up obsolete skill: ${legacy_dest}"
-        rm -rf "${legacy_dest}"
-      fi
-    fi
-  fi
   src="${SCRIPT_DIR}/skills/${skill}"
-  log "==> Skill (${label}): ${skill} ${dest}"
+  if [ "${label}" != "upgrade" ]; then
+    log "==> Skill (${label}): ${skill} ${dest}"
+  fi
   if [ -L "${dest}" ]; then
     if [ "${DRY_RUN}" -eq 1 ]; then
       printf '[dry-run] replace symlink with directory: %s\n' "${dest}"
+      if [ "${label}" != "upgrade" ]; then
+        cleanup_legacy_skill "${skill}" "${dest}" || return 1
+      fi
       return 0
     fi
     log "  replace symlink with directory: ${dest}"
@@ -191,31 +203,24 @@ install_skill_copy() {
   for file in ${files}; do
     install_file "${src}/${file}" "${dest}/${file}" || return 1
   done
+  if [ "${label}" != "upgrade" ]; then
+    cleanup_legacy_skill "${skill}" "${dest}" || return 1
+  fi
 }
 
 install_skill_link() {
   # install_skill_link <skill> <dest_dir>: link dest to the canonical copy.
   local skill="$1" dest="$2"
   local canonical="${AGENTS_BASE}/${skill}"
-  local legacy legacy_dest
-  if legacy="$(legacy_skill_name "${skill}" 2>/dev/null)"; then
-    legacy_dest="$(dirname "${dest}")/${legacy}"
-    if [ -e "${legacy_dest}" ] || [ -L "${legacy_dest}" ]; then
-      if [ "${DRY_RUN}" -eq 1 ]; then
-        printf '[dry-run] clean up obsolete skill: %s\n' "${legacy_dest}"
-      else
-        log "  cleaning up obsolete skill: ${legacy_dest}"
-        rm -rf "${legacy_dest}"
-      fi
-    fi
-  fi
   log "==> Skill (link): ${skill} ${dest} -> ${canonical}"
   if [ -L "${dest}" ] && [ "$(readlink "${dest}")" = "${canonical}" ]; then
     printf '  unchanged: %s\n' "${dest}"
+    cleanup_legacy_skill "${skill}" "${dest}" || return 1
     return 0
   fi
   if [ "${DRY_RUN}" -eq 1 ]; then
     printf '[dry-run] link %s -> %s\n' "${dest}" "${canonical}"
+    cleanup_legacy_skill "${skill}" "${dest}" || return 1
     return 0
   fi
   if ! is_missing "${dest}"; then
@@ -228,9 +233,10 @@ install_skill_link() {
   fi
   if ln -s "${canonical}" "${dest}"; then
     printf '  linked: %s\n' "${dest}"
+    cleanup_legacy_skill "${skill}" "${dest}" || return 1
   else
     log "  link failed; falling back to copy for ${dest}"
-    install_skill_copy "${skill}" "${dest}"
+    install_skill_copy "${skill}" "${dest}" || return 1
   fi
 }
 
@@ -291,33 +297,37 @@ upgrade_skill() {
   local legacy legacy_dest
   canonical="${AGENTS_BASE}/${skill}"
   log "==> Skill (upgrade): ${skill} ${dest}"
-  if legacy="$(legacy_skill_name "${skill}" 2>/dev/null)"; then
-    legacy_dest="$(dirname "${dest}")/${legacy}"
-    if is_missing "${dest}" && [ ! -L "${dest}" ]; then
-      if [ -e "${legacy_dest}" ] || [ -L "${legacy_dest}" ]; then
-        if [ "${DRY_RUN}" -eq 1 ]; then
-          printf '[dry-run] migrate legacy skill: %s -> %s\n' "${legacy_dest}" "${dest}"
-          return 0
-        fi
-        log "  migrating legacy skill: ${legacy_dest} -> ${dest}"
-        if [ -L "${legacy_dest}" ]; then
-          rm "${legacy_dest}"
-          if ln -s "${canonical}" "${dest}"; then
-            printf '  linked: %s\n' "${dest}"
-            return 0
-          fi
-          install_skill_copy "${skill}" "${dest}" upgrade
-          return 0
-        else
-          mv "${legacy_dest}" "${dest}" || return 1
-        fi
-      fi
-    elif [ -e "${legacy_dest}" ] || [ -L "${legacy_dest}" ]; then
+  if ! is_missing "${dest}"; then
+    cleanup_legacy_skill "${skill}" "${dest}" || return 1
+  elif legacy="$(legacy_skill_name "${skill}" 2>/dev/null)"; then
+    legacy_dest="${dest%/*}/${legacy}"
+    if ! is_missing "${legacy_dest}"; then
       if [ "${DRY_RUN}" -eq 1 ]; then
-        printf '[dry-run] clean up obsolete skill: %s\n' "${legacy_dest}"
+        printf '[dry-run] migrate legacy skill: %s -> %s\n' "${legacy_dest}" "${dest}"
+        return 0
+      fi
+      log "  migrating legacy skill: ${legacy_dest} -> ${dest}"
+      if [ -L "${legacy_dest}" ]; then
+        if [ -e "${canonical}" ] && [ "${dest}" != "${canonical}" ] && ln -s "${canonical}" "${dest}"; then
+          rm -f "${legacy_dest}"
+          printf '  linked: %s\n' "${dest}"
+          return 0
+        fi
+        if [ ! -e "${canonical}" ]; then
+          log "  canonical store missing; falling back to copy for ${dest}"
+        else
+          log "  link failed; falling back to copy for ${dest}"
+        fi
+        if install_skill_copy "${skill}" "${dest}" upgrade; then
+          rm -f "${legacy_dest}"
+          return 0
+        fi
+        return 1
       else
-        log "  cleaning up obsolete skill: ${legacy_dest}"
-        rm -rf "${legacy_dest}"
+        if ! mv "${legacy_dest}" "${dest}"; then
+          printf '  FAILED to migrate legacy skill: %s -> %s\n' "${legacy_dest}" "${dest}"
+          return 1
+        fi
       fi
     fi
   fi
