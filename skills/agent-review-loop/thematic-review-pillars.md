@@ -22,7 +22,10 @@ this file; it writes to the Tier 2 file instead.
    - Repo-local `.agents/review-refinements.md` (project-specific invariants).
    - Canonical `~/.agents/review-refinements.md` (default write target).
    - Legacy `~/.gemini/review-refinements.md` (read only when
-     `$REVIEW_REFINEMENTS_LEGACY=1` is set; skipped by default).
+     `$REVIEW_REFINEMENTS_LEGACY=1` is set; skipped by default). Note that
+     legacy entries follow pre-generalization pillar numbering (such as
+     Buffer Safety and Numerical Robustness) rather than the canonical 8
+     categories below.
 
    Standing rule: every bullet in the canonical file must help a review in a
    different repo on a different stack. Repo-specific lessons belong in the

@@ -30,6 +30,9 @@ tool at all, use the sequential fallback in that same table.
 4. **No unapproved posts**: never comment on a PR without explicit human
    approval in this session for this report. Presenting findings in chat
    is not approval to post them.
+5. **Credential redaction**: ensure secrets, API keys, passwords, and private
+   tokens are redacted from reports and PR comments; use placeholders like
+   `<REDACTED_SECRET>` instead.
 
 ## 1. Review Target
 
@@ -45,14 +48,18 @@ The skill takes an optional target argument:
   Homebrew install outside the inherited `PATH`), prefix the commands
   below with `export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"`
   (Apple Silicon, then Intel Mac; Linuxbrew users add
-  `$(brew --prefix)/bin` instead). Resolve the PR number from a URL,
-  record the head SHA the review covers, and fetch the diff with:
+  `$(brew --prefix)/bin` instead). Resolve the input to a canonical
+  numeric PR ID, record the head SHA the review covers, and fetch the
+  diff with:
   ```bash
+  pr_number="$(gh pr view "$pr_input" --json number --jq .number)" || { echo "ERROR: gh pr view failed for $pr_input; check PR number or URL" >&2; exit 1; }
+  [[ "$pr_number" =~ ^[0-9]+$ ]] || { echo "ERROR: resolved PR number is non-numeric: $pr_number" >&2; exit 1; }
   diff_file="$(mktemp "${TMPDIR:-/tmp}/agent-review-report-diff.XXXXXX")"
-  sha_before=$(gh pr view <pr_number> --json headRefOid --jq .headRefOid) || { echo "ERROR: gh pr view failed for PR <pr_number>; aborting, head SHA unknown"; exit 1; }
-  gh pr diff <pr_number> > "$diff_file" || { echo "ERROR: gh pr diff failed for PR <pr_number>; aborting, diff not fetched"; exit 1; }
-  [ -s "$diff_file" ] || { echo "ERROR: empty diff for PR <pr_number>; aborting rather than reviewing nothing"; exit 1; }
-  sha_after=$(gh pr view <pr_number> --json headRefOid --jq .headRefOid) || { echo "ERROR: gh pr view failed for PR <pr_number>; aborting, head SHA unknown"; exit 1; }
+  sha_before=$(gh pr view "$pr_number" --json headRefOid --jq .headRefOid) || { echo "ERROR: gh pr view failed for PR $pr_number; aborting, head SHA unknown" >&2; rm -f "$diff_file"; exit 1; }
+  [ -n "$sha_before" ] && [ "$sha_before" != "null" ] || { echo "ERROR: head SHA missing for PR $pr_number; aborting" >&2; rm -f "$diff_file"; exit 1; }
+  gh pr diff "$pr_number" > "$diff_file" || { echo "ERROR: gh pr diff failed for PR $pr_number; aborting, diff not fetched" >&2; rm -f "$diff_file"; exit 1; }
+  [ -s "$diff_file" ] || { echo "ERROR: empty diff for PR $pr_number; aborting rather than reviewing nothing" >&2; rm -f "$diff_file"; exit 1; }
+  sha_after=$(gh pr view "$pr_number" --json headRefOid --jq .headRefOid) || { echo "ERROR: gh pr view failed for PR $pr_number; aborting, head SHA unknown" >&2; rm -f "$diff_file"; exit 1; }
   ```
   When `sha_before` and `sha_after` differ, a push landed mid-fetch:
   refetch once more (at most 3 attempts total, then report the drift
@@ -63,10 +70,17 @@ The skill takes an optional target argument:
 Filter out lockfiles, generated code, and binary artifacts before reviewing:
 
 ```bash
-git --no-pager diff HEAD -- . \
-  ':!*.lock' ':!Cargo.lock' ':!package-lock.json' ':!pnpm-lock.yaml' ':!uv.lock' \
-  ':!target' ':!dist' ':!build' ':!node_modules' \
-  ':!*.onnx*' ':!*.gguf' ':!*.wasm' ':!*.dylib' ':!*.so' ':!*.dll' \
+if git diff --quiet HEAD -- .; then
+  base="$(git merge-base origin/main HEAD 2>/dev/null || git merge-base main HEAD 2>/dev/null || echo "origin/main")"
+  diff_target="${base}...HEAD"
+else
+  diff_target="HEAD"
+fi
+
+git --no-pager diff "${diff_target}" -- . \
+  ':!**/*.lock' ':!**/Cargo.lock' ':!**/package-lock.json' ':!**/pnpm-lock.yaml' ':!**/uv.lock' \
+  ':!**/target/**' ':!**/dist/**' ':!**/build/**' ':!**/node_modules/**' \
+  ':!**/*.onnx*' ':!**/*.gguf' ':!**/*.wasm' ':!**/*.dylib' ':!**/*.so' ':!**/*.dll' \
   ':!**/generated/**' ':!devlog/**' ':!docs/**'
 ```
 
@@ -114,11 +128,13 @@ starts blind.
 ## 4. The Review Protocol (One Round, Max Fan-Out)
 
 Run exactly one review round: 8 parallel reviewers, one per pillar. Only
-after all 8 reports have returned, run one synthesis reviewer that
-reconciles overlaps before you see the report. Never spawn synthesis
-concurrently with the pillar reviewers. When your runtime caps
-concurrent subagents, run the reviewers in waves inside the same round.
-Coverage stays fixed; only the scheduling bends.
+after all 8 reports have returned (or timed out after one re-prompt), run one
+synthesis reviewer that reconciles overlaps before you see the report. If a
+reviewer has timed out, cancel or terminate it according to your runtime's
+lifecycle management before invoking synthesis. Never spawn synthesis
+concurrently with the pillar reviewers. When your runtime caps concurrent
+subagents, run the reviewers in waves inside the same round. Coverage stays
+fixed; only the scheduling bends.
 
 Each reviewer audits the filtered diff plus the surrounding source it
 needs (callers, types, tests, configs) against its assigned pillar of
@@ -134,19 +150,19 @@ the **8 Core Thematic Pillars**:
 8. Testing, Observability & Verification Invariants
 
 Use your runtime's row. Every reviewer in the round reports before you
-classify anything. If a reviewer has not reported within the runtime
-default timeout, re-prompt it once; if still silent, proceed with the
-reports in hand, note the missing lens in the report header, and treat
-its pillars as uncovered.
+synthesize anything. If a reviewer has not reported within the runtime
+default timeout, re-prompt it once; if still silent, cancel or terminate the
+subagent if your runtime supports it, proceed with the reports in hand, note
+the missing lens in the report header, and treat its pillars as uncovered.
 
 <!-- Mirrored with skills/agent-review-loop/SKILL.md: keep runtime rows in sync. -->
 | Runtime | How to spawn one reviewer per lens | How to collect |
 |---|---|---|
-| Muse | `subagent_spawn`, one child per reviewer in a single fan-out | `subagent_wait` on every child before classifying |
+| Muse | `subagent_spawn`, one child per reviewer in a single fan-out | `subagent_wait` on every child before synthesizing |
 | Claude Code | `Task` tool, one call per reviewer, all calls issued together in a single block | every call returns its report; proceed only when all have returned |
 | Codex | `spawn_agent` collaboration subagents; check `list_agents` first and never disturb unrelated agents; unique task names per round (for example `report_r1_correctness`) | wait for every reviewer in the round |
 | Antigravity/Gemini | `invoke_subagent` with `TypeName` self or research and a distinct `Role` per reviewer | the call blocks until every reviewer in the round has reported; proceed only when all reports are in |
-| Any other runtime | Sequential fallback: run one review pass per lens yourself, re-reading the diff fresh for each pass so earlier passes never narrow later ones | all passes complete before classifying |
+| Any other runtime | Sequential fallback: run one review pass per lens yourself, re-reading the diff fresh for each pass so earlier passes never narrow later ones | all passes complete before synthesizing |
 
 <!-- Mirrored with skills/agent-review-loop/SKILL.md: keep reviewer prompt bullets in sync. -->
 Every reviewer prompt must include:
@@ -211,9 +227,10 @@ On explicit approval:
 2. Write the body to a uniquely named scratch file and post it with an
    explicit target:
    ```bash
-   comment_file="$(mktemp "${TMPDIR:-/tmp}/agent-review-report-comment.XXXXXX.md")"
+   comment_file="$(mktemp "${TMPDIR:-/tmp}/agent-review-report-comment.XXXXXX")"
    # ... render the presented report into "$comment_file" ...
    gh pr comment <pr_number> --body-file "$comment_file"
+   rm -f "$comment_file"
    ```
 3. Report the posted comment URL back to the user.
 
@@ -242,7 +259,8 @@ Pick the write target in order:
    stack; if it cannot be stated that generally, abstract it or file it
    repo-local. When canonical does not exist yet, create it with the 8
    `### Pillar N:` headings (copy their exact titles from the base pillars
-   file), then append.
+   file, or use the 8 canonical titles in Section 4 if the base pillars file
+   is absent), then append.
 4. Never write the legacy `~/.gemini/review-refinements.md` path. It is read
    only when `$REVIEW_REFINEMENTS_LEGACY=1` is set; all new writes go to
    canonical or repo-local.
@@ -253,25 +271,48 @@ may have filed bullets since. When a fresh read shows your lesson already
 covered, subsume instead of duplicating.
 
 <!-- Mirrored with skills/agent-review-loop/SKILL.md: keep pillar filing rules in sync. -->
-Rules:
+### How to Update the Refinements File Correctly
 
-1. **Subsumption first**: if an existing bullet under a pillar already covers
-   the lesson, refine that bullet instead of adding a sibling.
-2. **Generalize**: write the principle the finding taught (trigger, hazard,
-   fix shape), not the instance. One bullet must help a future review in a
-   different file.
-3. **File under the right pillar**: match the finding to one of the 8
-   `### Pillar N:` sections. Never add a 9th pillar or rename one; every
-   review addresses pillars by number.
-4. **Stay bounded**: at most 2 new or refined bullets per run. Skip anything
-   already covered, anything repo-specific trivia, and anything you are not
-   confident will recur.
-5. **Append-only discipline**: add or refine bullets only. Never delete or
-   rewrite another loop's bullets, and never reformat the file.
-6. **Tool-agnostic bullets**: state trigger, hazard, and fix shape. Never
-   name an agent, model, runtime, or assistant tool in a bullet.
-7. **No signatures**: no author, date, or source tags on bullets. Shared
-   history lives outside the file.
-8. **Merge across loops**: when a bullet filed by another loop overlaps
-   yours, extend that bullet's trigger list instead of adding a
-   near-duplicate.
+Follow this exact sequence whenever filing learnings:
+
+1. **Fresh re-read**: View the target file immediately before editing, in the
+   same step as the write. Never edit from a copy loaded at review start;
+   another loop may have filed bullets in the interim.
+2. **Classify under the exact canonical pillar**: Match the lesson to one of
+   the 8 canonical headings:
+   - `### Pillar 1: Functional Correctness, Logic & Edge Cases`
+   - `### Pillar 2: Security, Authentication & Input Sanitization`
+   - `### Pillar 3: Concurrency, Asynchrony & Lifecycle Management`
+   - `### Pillar 4: Error Handling, Resilience & Diagnostics`
+   - `### Pillar 5: Interface Contracts, API Design & Compatibility`
+   - `### Pillar 6: Performance, Resource Efficiency & Scalability`
+   - `### Pillar 7: Code Simplification, Clean Architecture & Maintainability`
+   - `### Pillar 8: Testing, Observability & Verification Invariants`
+   Never invent custom pillar titles, rename a pillar, or add a 9th pillar.
+   Every bullet filed in canonical must help across stacks and repositories;
+   lessons specific to one repository belong in repo-local refinements.
+3. **Subsumption first**: Read existing bullets under that pillar's heading.
+   If an existing bullet already covers the core failure mode, edit that
+   bullet in place to broaden its trigger condition or refine its fix shape.
+   Do not add near-duplicate siblings.
+4. **Format the bullet**: Each bullet must adhere to the exact structure:
+   `- **Title**: Trigger condition (when doing X): hazard or failure mode (Y occurs); fix shape and verification guidance (fix by doing Z, and verify via W).`
+   - Single bullet starting with `- **Title**:`.
+   - Title in Title Case (2 to 5 words).
+   - Domain-neutral trigger, hazard, and fix shape.
+   - Tool-agnostic: never name an agent, model, runtime, or assistant tool.
+   - Zero attribution: no signatures, author tags, dates, or loop IDs.
+   - Punctuation invariants: zero em dashes (U+2014) or `--` / spaced hyphens
+     as punctuation lookalikes. Use standard ASCII punctuation (colons, commas,
+     semicolons, parentheses, periods).
+5. **Exact file placement**:
+   - If refining an existing bullet, replace it in place.
+   - If adding a new bullet, insert it directly under the appropriate
+     `### Pillar N:` heading (below `<!-- Loops append bullets here. -->` or
+     after existing bullets in that section, strictly before the next
+     `### Pillar` heading).
+     Never append bullets at the end of the file outside a pillar section.
+6. **Immediate read-back**: View the modified lines with a file viewing tool
+   to confirm correct placement, valid markdown, and preserved pillar structure.
+7. **Stay bounded**: At most 2 new or refined bullets per run. If the review
+   surfaced nothing durable or novel, leave the file untouched.

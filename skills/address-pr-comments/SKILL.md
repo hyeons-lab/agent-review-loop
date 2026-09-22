@@ -85,17 +85,21 @@ then fetch:
 # Resolve once: canonical number plus the triage SHA for the summary
 gh pr view <pr_input> --json number,headRefOid --jq '"number: \(.number)", "triage_sha: \(.headRefOid)"' || { echo "ERROR: PR resolve failed; check the number or URL and gh auth"; exit 1; }
 
+scratch_dir="$(mktemp -d "${TMPDIR:-/tmp}/pr-comments.XXXXXX")"
+
 # Inline diff comments
-gh api /repos/{owner}/{repo}/pulls/<pr_number>/comments > /tmp/pr-diff-comments.json || { echo "ERROR: diff-comment fetch failed; check the PR number and gh auth"; exit 1; }
-jq -r '.[] | "DIFF [\(.id)] \(.path):\(.line) by \(.user.login):\n\(.body)\n"' /tmp/pr-diff-comments.json || { echo "ERROR: diff-comment render failed; check jq and the JSON payload"; exit 1; }
+gh api /repos/{owner}/{repo}/pulls/<pr_number>/comments > "${scratch_dir}/diff-comments.json" || { echo "ERROR: diff-comment fetch failed; check the PR number and gh auth"; exit 1; }
+jq -r '.[] | "DIFF [\(.id)] \(.path):\(.line) by \(.user.login):\n\(.body)\n"' "${scratch_dir}/diff-comments.json" || { echo "ERROR: diff-comment render failed; check jq and the JSON payload"; exit 1; }
 
 # Submitted review summaries (approve/changes-requested bodies: Copilot, humans)
-gh api /repos/{owner}/{repo}/pulls/<pr_number>/reviews > /tmp/pr-reviews.json || { echo "ERROR: review fetch failed; check the PR number and gh auth"; exit 1; }
-jq -r '.[] | "REVIEW [\(.id)] \(.state) by \(.user.login):\n\(.body)\n"' /tmp/pr-reviews.json || { echo "ERROR: review render failed; check jq and the JSON payload"; exit 1; }
+gh api /repos/{owner}/{repo}/pulls/<pr_number>/reviews > "${scratch_dir}/reviews.json" || { echo "ERROR: review fetch failed; check the PR number and gh auth"; exit 1; }
+jq -r '.[] | "REVIEW [\(.id)] \(.state) by \(.user.login):\n\(.body)\n"' "${scratch_dir}/reviews.json" || { echo "ERROR: review render failed; check jq and the JSON payload"; exit 1; }
 
 # Top-level issue comments (review bots, humans)
-gh api /repos/{owner}/{repo}/issues/<pr_number>/comments > /tmp/pr-issue-comments.json || { echo "ERROR: issue-comment fetch failed; check the PR number and gh auth"; exit 1; }
-jq -r '.[] | "ISSUE [\(.id)] by \(.user.login):\n\(.body)\n"' /tmp/pr-issue-comments.json || { echo "ERROR: issue-comment render failed; check jq and the JSON payload"; exit 1; }
+gh api /repos/{owner}/{repo}/issues/<pr_number>/comments > "${scratch_dir}/issue-comments.json" || { echo "ERROR: issue-comment fetch failed; check the PR number and gh auth"; exit 1; }
+jq -r '.[] | "ISSUE [\(.id)] by \(.user.login):\n\(.body)\n"' "${scratch_dir}/issue-comments.json" || { echo "ERROR: issue-comment render failed; check jq and the JSON payload"; exit 1; }
+
+rm -rf "${scratch_dir}"
 ```
 
 ### B. Categorize the findings
@@ -104,14 +108,14 @@ File every finding under one of the 8 Core Thematic Pillars (titles are
 exact; the sibling `agent-review-loop` skill's base pillars file defines
 them):
 
-1. Low-Level Safety, Alignment & Buffer Invariants
-2. Concurrency, Cancellation & State Machine Lifecycles
-3. Error Propagation, Diagnostics & No-Panic Invariants
-4. Multiplatform Portability & Cross-Binding Drift
-5. Numerical Robustness & Boundary Validation
-6. Pipeline Completeness & Contract Faithfulness
-7. Performance, SIMD & Resource Efficiency
-8. Code Simplification, Cleanup & Complexity Reduction
+1. Functional Correctness, Logic & Edge Cases
+2. Security, Authentication & Input Sanitization
+3. Concurrency, Asynchrony & Lifecycle Management
+4. Error Handling, Resilience & Diagnostics
+5. Interface Contracts, API Design & Compatibility
+6. Performance, Resource Efficiency & Scalability
+7. Code Simplification, Clean Architecture & Maintainability
+8. Testing, Observability & Verification Invariants
 
 Read the base pillars from the sibling `agent-review-loop` skill directory
 when it is installed alongside this one
@@ -277,7 +281,7 @@ Rules:
      out=$(gh pr checks <pr_number> --json name,bucket); rc=$?
      if [ $rc -ne 0 ] && ! echo "$out" | jq -e . >/dev/null 2>&1; then echo "WARNING: checks fetch failed (attempt $i of 30); retrying"; sleep 60; continue; fi
      printf '%s\n' "$out"
-     settle=$(echo "$out" | jq -r '[.[].bucket] | if any(. == "pending") then "wait" else "done" end') || { echo "WARNING: checks parse failed (attempt $i of 30); retrying"; sleep 60; continue; }
+     settle=$(echo "$out" | jq -r 'if length == 0 or any(.[].bucket; . == "pending") then "wait" else "done" end') || { echo "WARNING: checks parse failed (attempt $i of 30); retrying"; sleep 60; continue; }
      [ "$settle" = "done" ] && break
      if [ "$i" -lt 30 ]; then sleep 60; fi
    done

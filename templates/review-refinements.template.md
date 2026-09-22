@@ -34,7 +34,7 @@ deletes, no reformatting); re-read this file immediately before editing.
 
 ### Pillar 4: Error Handling, Resilience & Diagnostics
 <!-- Loops append bullets here. -->
-- **Explicit error propagation and atomic state updates**: When handling recoverable operational errors or persisting state changes, return typed error representations instead of crashing, force-unwrapping, or discarding error contexts, and avoid non-atomic partial writes; fix by propagating descriptive error types with actionable recovery guidance and staging file modifications through temporary writes followed by atomic renames.
+- **Explicit error propagation and atomic state updates**: When handling recoverable operational errors or persisting state changes, return typed error representations instead of crashing, force-unwrapping, or discarding error contexts, and avoid non-atomic partial writes or deleting destinations before staging; fix by propagating descriptive error types with actionable recovery guidance, staging modifications through uniquely named temporary files, and overwriting destinations via atomic rename.
 
 ### Pillar 5: Interface Contracts, API Design & Compatibility
 <!-- Loops append bullets here. -->
@@ -50,4 +50,4 @@ deletes, no reformatting); re-read this file immediately before editing.
 
 ### Pillar 8: Testing, Observability & Verification Invariants
 <!-- Loops append bullets here. -->
-- **Non-vacuous regression testing and license completeness**: When writing automated tests or updating license metadata, ensure test assertions fail on real faults, and verify copyright notices name the actual holder with matching terms; fix by asserting behavioral invariants on failure paths and aligning license notices with files on disk.
+- **Non-vacuous regression testing and license completeness**: When writing automated tests, linter checks, or updating license metadata, ensure assertions fail on real faults, distinguish missing test tools from linter failures, and verify counts explicitly rather than printing unasserted tallies; fix by asserting behavioral invariants on failure paths, checking exit codes directly without fallbacks masking failures, and verifying exact expected mutation counts.

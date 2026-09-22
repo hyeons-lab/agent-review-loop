@@ -37,7 +37,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILLS="agent-review-loop agent-review-report address-pr-comments"
 TEMPLATE_SRC="${SCRIPT_DIR}/templates/review-refinements.template.md"
 
-CANONICAL_SKILLS_DIR="${HOME}/.agents/skills"
+AGENTS_BASE="${HOME}/.agents/skills"
+MUSE_BASE="${XDG_CONFIG_HOME:-${HOME}/.config}/muse/skills"
+CLAUDE_BASE="${HOME}/.claude/skills"
+CODEX_BASE="${HOME}/.codex/skills"
+ANTIGRAVITY_BASE="${HOME}/.gemini/config/skills"
 CANONICAL_REFINEMENTS="${HOME}/.agents/review-refinements.md"
 LEGACY_REFINEMENTS="${HOME}/.gemini/review-refinements.md"
 
@@ -88,8 +92,8 @@ err() {
 copy_atomic() {
   # copy_atomic <src> <dest>: copy via temp file plus rename.
   local src="$1" dest="$2" tmp
-  tmp="${dest}.tmp.$$"
-  if cp "${src}" "${tmp}" && mv "${tmp}" "${dest}"; then
+  tmp="$(mktemp "${dest}.tmp.XXXXXX")" || return 1
+  if cp "${src}" "${tmp}" && mv -f "${tmp}" "${dest}"; then
     return 0
   fi
   rm -f "${tmp}"
@@ -108,7 +112,7 @@ install_file() {
       printf '[dry-run] replace symlink with file: %s\n' "${dest}"
     else
       log "  replace symlink with file: ${dest}"
-      if rm "${dest}" && copy_atomic "${src}" "${dest}"; then
+      if copy_atomic "${src}" "${dest}"; then
         printf '  updated: %s\n' "${dest}"
       else
         printf '  FAILED to replace: %s (check permissions, then re-run install.sh)\n' "${dest}"
@@ -194,6 +198,10 @@ install_skill_link() {
 
 seed_refinements() {
   log "==> Shared refinements: ${CANONICAL_REFINEMENTS}"
+  if [ -f "${LEGACY_REFINEMENTS}" ]; then
+    log "  note: legacy ${LEGACY_REFINEMENTS} exists and stays in place;"
+    log "  set REVIEW_REFINEMENTS_LEGACY=1 to include it in reviews."
+  fi
   if ! is_missing "${CANONICAL_REFINEMENTS}"; then
     log "  kept existing file (never overwritten)"
     return 0
@@ -215,27 +223,28 @@ seed_refinements() {
     fi
     log "  seeded from template (edit freely; future runs keep it)"
   fi
-  if [ -f "${LEGACY_REFINEMENTS}" ]; then
-    log "  note: legacy ${LEGACY_REFINEMENTS} exists and stays in place;"
-    log "  set REVIEW_REFINEMENTS_LEGACY=1 to include it in reviews."
-  fi
 }
 
 verify_skill() {
   # verify_skill <skill> <dest_dir>: confirm the install is loadable.
   # Paths are tested through ${dest} itself so relative symlinks resolve
   # against the link's directory (never the CWD), with no readlink needed.
-  local skill="$1" dest="$2"
+  local skill="$1" dest="$2" file
   if [ ! -f "${dest}/SKILL.md" ]; then
     printf '  MISSING: %s (no SKILL.md; reinstall, or check the link target)\n' "${dest}"
     return 1
   fi
-  if grep -qxF "name: ${skill}" "${dest}/SKILL.md"; then
-    printf '  ok: %s\n' "${dest}"
-  else
+  if ! grep -qxF "name: ${skill}" "${dest}/SKILL.md"; then
     printf '  INVALID: %s (SKILL.md name mismatch; expected %s)\n' "${dest}" "${skill}"
     return 1
   fi
+  for file in $(skill_files "${skill}"); do
+    if [ ! -f "${dest}/${file}" ]; then
+      printf '  MISSING: %s (missing bundled file: %s)\n' "${dest}" "${file}"
+      return 1
+    fi
+  done
+  printf '  ok: %s\n' "${dest}"
 }
 
 upgrade_skill() {
@@ -285,13 +294,6 @@ if [ -z "${TARGETS}" ]; then
 fi
 # Deduplicate while keeping order.
 TARGETS="$(printf '%s\n' ${TARGETS} | awk '!seen[$0]++' | tr '\n' ' ')"
-
-# Resolve target dirs (Muse honors XDG_CONFIG_HOME).
-MUSE_BASE="${XDG_CONFIG_HOME:-${HOME}/.config}/muse/skills"
-CLAUDE_BASE="${HOME}/.claude/skills"
-CODEX_BASE="${HOME}/.codex/skills"
-ANTIGRAVITY_BASE="${HOME}/.gemini/config/skills"
-AGENTS_BASE="${CANONICAL_SKILLS_DIR}"
 
 for skill in ${SKILLS}; do
   if [ ! -f "${SCRIPT_DIR}/skills/${skill}/SKILL.md" ]; then
