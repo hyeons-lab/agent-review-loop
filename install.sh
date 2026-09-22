@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Install the agent skills (agent-review-loop, agent-review-report,
-# address-pr-comments) for Muse, Claude Code, Codex, and
+# agent-review-pr-comments) for Muse, Claude Code, Codex, and
 # Antigravity/Gemini, and seed the shared refinements file.
 #
 # Idempotent: re-running changes nothing when everything is current, and it
@@ -34,7 +34,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SKILLS="agent-review-loop agent-review-report address-pr-comments"
+SKILLS="agent-review-loop agent-review-report agent-review-pr-comments"
 TEMPLATE_SRC="${SCRIPT_DIR}/templates/review-refinements.template.md"
 
 AGENTS_BASE="${HOME}/.agents/skills"
@@ -49,8 +49,16 @@ skill_files() {
   # skill_files <skill>: print the bundled files that make up one skill.
   case "$1" in
     agent-review-loop) printf 'SKILL.md thematic-review-pillars.md agents/openai.yaml\n' ;;
-    agent-review-report|address-pr-comments) printf 'SKILL.md agents/openai.yaml\n' ;;
+    agent-review-report|agent-review-pr-comments) printf 'SKILL.md agents/openai.yaml\n' ;;
     *) printf 'ERROR: unknown skill: %s\n' "$1" >&2; return 1 ;;
+  esac
+}
+
+legacy_skill_name() {
+  # legacy_skill_name <skill>: print previous names of a renamed skill.
+  case "$1" in
+    agent-review-pr-comments) printf 'address-pr-comments\n' ;;
+    *) return 1 ;;
   esac
 }
 
@@ -149,6 +157,18 @@ install_file() {
 install_skill_copy() {
   # install_skill_copy <skill> <dest_dir> [label]
   local skill="$1" dest="$2" file src files label="${3:-copy}"
+  local legacy legacy_dest
+  if legacy="$(legacy_skill_name "${skill}" 2>/dev/null)"; then
+    legacy_dest="$(dirname "${dest}")/${legacy}"
+    if [ -e "${legacy_dest}" ] || [ -L "${legacy_dest}" ]; then
+      if [ "${DRY_RUN}" -eq 1 ]; then
+        printf '[dry-run] clean up obsolete skill: %s\n' "${legacy_dest}"
+      else
+        log "  cleaning up obsolete skill: ${legacy_dest}"
+        rm -rf "${legacy_dest}"
+      fi
+    fi
+  fi
   src="${SCRIPT_DIR}/skills/${skill}"
   log "==> Skill (${label}): ${skill} ${dest}"
   if [ -L "${dest}" ]; then
@@ -177,6 +197,18 @@ install_skill_link() {
   # install_skill_link <skill> <dest_dir>: link dest to the canonical copy.
   local skill="$1" dest="$2"
   local canonical="${AGENTS_BASE}/${skill}"
+  local legacy legacy_dest
+  if legacy="$(legacy_skill_name "${skill}" 2>/dev/null)"; then
+    legacy_dest="$(dirname "${dest}")/${legacy}"
+    if [ -e "${legacy_dest}" ] || [ -L "${legacy_dest}" ]; then
+      if [ "${DRY_RUN}" -eq 1 ]; then
+        printf '[dry-run] clean up obsolete skill: %s\n' "${legacy_dest}"
+      else
+        log "  cleaning up obsolete skill: ${legacy_dest}"
+        rm -rf "${legacy_dest}"
+      fi
+    fi
+  fi
   log "==> Skill (link): ${skill} ${dest} -> ${canonical}"
   if [ -L "${dest}" ] && [ "$(readlink "${dest}")" = "${canonical}" ]; then
     printf '  unchanged: %s\n' "${dest}"
@@ -256,8 +288,39 @@ verify_skill() {
 upgrade_skill() {
   # upgrade_skill <skill> <dest>: refresh an installed copy; skip otherwise.
   local skill="$1" dest="$2" canonical link_text
+  local legacy legacy_dest
   canonical="${AGENTS_BASE}/${skill}"
   log "==> Skill (upgrade): ${skill} ${dest}"
+  if legacy="$(legacy_skill_name "${skill}" 2>/dev/null)"; then
+    legacy_dest="$(dirname "${dest}")/${legacy}"
+    if is_missing "${dest}" && [ ! -L "${dest}" ]; then
+      if [ -e "${legacy_dest}" ] || [ -L "${legacy_dest}" ]; then
+        if [ "${DRY_RUN}" -eq 1 ]; then
+          printf '[dry-run] migrate legacy skill: %s -> %s\n' "${legacy_dest}" "${dest}"
+          return 0
+        fi
+        log "  migrating legacy skill: ${legacy_dest} -> ${dest}"
+        if [ -L "${legacy_dest}" ]; then
+          rm "${legacy_dest}"
+          if ln -s "${canonical}" "${dest}"; then
+            printf '  linked: %s\n' "${dest}"
+            return 0
+          fi
+          install_skill_copy "${skill}" "${dest}" upgrade
+          return 0
+        else
+          mv "${legacy_dest}" "${dest}" || return 1
+        fi
+      fi
+    elif [ -e "${legacy_dest}" ] || [ -L "${legacy_dest}" ]; then
+      if [ "${DRY_RUN}" -eq 1 ]; then
+        printf '[dry-run] clean up obsolete skill: %s\n' "${legacy_dest}"
+      else
+        log "  cleaning up obsolete skill: ${legacy_dest}"
+        rm -rf "${legacy_dest}"
+      fi
+    fi
+  fi
   if is_missing "${dest}"; then
     log "  not installed, skipping (upgrade never installs to new targets)"
     return 0
@@ -361,4 +424,4 @@ if [ "${failures}" -gt 0 ]; then
   log "Completed with ${failures} problem(s)."
   exit 1
 fi
-log "Done. Invoke with /agent-review-loop [low|medium|high|max], /agent-review-report [<pr>], or /address-pr-comments [<pr>] in any supported agent."
+log "Done. Invoke with /agent-review-loop [low|medium|high|max], /agent-review-report [<pr>], or /agent-review-pr-comments [<pr>] in any supported agent."

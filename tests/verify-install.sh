@@ -20,7 +20,7 @@ mkdir -p "${FAKE}" "${LOG_DIR}"
 
 export HOME="${FAKE}"
 export XDG_CONFIG_HOME="${FAKE}/.config"
-SKILLS="agent-review-loop agent-review-report address-pr-comments"
+SKILLS="agent-review-loop agent-review-report agent-review-pr-comments"
 
 pass=0; fail=0
 check() { # check <desc> <command...>
@@ -172,11 +172,19 @@ for s in ${SKILLS}; do
   check "upgrade never installs missing canonical: $s" test ! -e "${FAKE}/.agents/skills/$s"
 done
 check "upgrade leaves refinements alone" grep -q "left untouched" "${LOG_DIR}/rfl-run9b.log"
-rm -rf "${FAKE}/.claude/skills/address-pr-comments"
+rm -rf "${FAKE}/.claude/skills/agent-review-pr-comments"
 check "upgrade with skill removed" run_install "${LOG_DIR}/rfl-run9d.log" --upgrade --claude
-check "upgrade adds no new skill" test ! -e "${FAKE}/.claude/skills/address-pr-comments"
+check "upgrade adds no new skill" test ! -e "${FAKE}/.claude/skills/agent-review-pr-comments"
 check "upgrade keeps loop skill" test -f "${FAKE}/.claude/skills/agent-review-loop/SKILL.md"
 check "upgrade keeps report skill" test -f "${FAKE}/.claude/skills/agent-review-report/SKILL.md"
+# Verify legacy skill migration under upgrade
+mkdir -p "${FAKE}/.claude/skills/address-pr-comments/agents"
+echo "stale legacy" > "${FAKE}/.claude/skills/address-pr-comments/SKILL.md"
+echo "stale yaml" > "${FAKE}/.claude/skills/address-pr-comments/agents/openai.yaml"
+check "upgrade legacy skill" run_install "${LOG_DIR}/rfl-run9-legacy.log" --upgrade --claude
+check "legacy skill migrated to new name" test -f "${FAKE}/.claude/skills/agent-review-pr-comments/SKILL.md"
+check "legacy skill updated to current content" cmp -s "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" "${FAKE}/.claude/skills/agent-review-pr-comments/SKILL.md"
+check "legacy skill old directory removed" test ! -e "${FAKE}/.claude/skills/address-pr-comments"
 rm "${FAKE}/.agents/review-refinements.md"
 check "upgrade without refinements file" run_install "${LOG_DIR}/rfl-run9c.log" --upgrade
 check "upgrade never seeds refinements" test ! -e "${FAKE}/.agents/review-refinements.md"

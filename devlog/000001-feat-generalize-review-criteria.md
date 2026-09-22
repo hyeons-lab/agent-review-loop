@@ -20,6 +20,11 @@
 - 2026-09-21T19:39-07:00 Retain diagnostic logs on test assertion failures: Updated verify-install.sh harness trap to retain the log directory and print failed command output when assertions fail, ensuring CI and local debugging have full error context.
 - 2026-09-21T19:39-07:00 Unconditionally decouple diff scratch cleanup from PR posting approval: Moved scratch diff file cleanup in agent-review-report to a dedicated concluding section so that local reviews and unapproved PR reviews do not leak temporary files.
 - 2026-09-21T19:58-07:00 Explicitly scope read-only invariant in agent-review-report: Core Invariant 3 was scoped specifically to the repository and code under review, making the refinements file an explicit exception per Section 7 so reviewers are not blocked from recording durable learnings.
+- 2026-09-21T22:22-07:00 Adopt living document synthesis protocol for review refinements: Replaced artificial per-round numerical caps with a living document model where all actionable review suggestions are incorporated by actively rewriting and generalizing existing bullets across pillars.
+- 2026-09-21T22:28-07:00 Mandate add/merge and total bullet cleanup pass: Explicitly required review agents to either merge suggestions into existing bullets or add new ones, followed by a total cleanup pass over that pillar's bullets so the document stays organized and evolves over time rather than accumulating unbounded additions.
+- 2026-09-21T22:38-07:00 Prefix all skills under agent-review- namespace: Renamed address-pr-comments to agent-review-pr-comments, unifying the suite into /agent-review-loop, /agent-review-report, and /agent-review-pr-comments.
+- 2026-09-21T22:40-07:00 Support seamless legacy skill migration under upgrade: Added legacy_skill_name mapping and migration logic in install.sh so ./install.sh --upgrade detects previous address-pr-comments installs, migrates them to agent-review-pr-comments, updates them, and removes obsolete directories.
+- 2026-09-21T22:50-07:00 Automatic timestamped backups and accumulation pruning prompts: Required review agents to create timestamped snapshots in backups/ before editing review-refinements.md, use surgical chunk replacement scoped to single pillars, verify the 8-pillar structural invariant, and ask the user before pruning older backups when they accumulate beyond 5 snapshots.
 
 ## What Changed
 
@@ -67,6 +72,39 @@
 - 2026-09-21T19:39-07:00 `install.sh`: Added directory destination guard in copy_atomic, simplified destination directory existence check in install_skill_copy, consolidated target normalization and deduplication into a single pass, and updated /agent-review-report invocation placeholder to [<pr>].
 - 2026-09-21T19:39-07:00 `tests/verify-install.sh`: Hardened test harness with cleanup function retaining diagnostic logs on failure, captured failure output in check helper, added non-owner file readability assertion, and added assertion for 35 planned file installs on empty-home dry run.
 - 2026-09-21T19:58-07:00 `skills/agent-review-report/SKILL.md`: Scoped Core Invariant 3 to code under review and clarified the refinements write exception to resolve Copilot review finding.
+- 2026-09-21T22:22-07:00 `devlog/plans/000001-03-living-document-refinements.md`: Implementation plan for living document review refinements protocol and active bullet generalization.
+- 2026-09-21T22:22-07:00 `templates/review-refinements.template.md`: Removed per-round bullet quotas, codified living document synthesis rules, and generalized starter bullets across all 8 canonical SWE pillars.
+- 2026-09-21T22:22-07:00 `skills/agent-review-loop/SKILL.md`: Updated Section 6 with living document synthesis protocol and comprehensive suggestion incorporation.
+- 2026-09-21T22:22-07:00 `skills/agent-review-report/SKILL.md`: Aligned Section 7 update protocol with living document synthesis and comprehensive suggestion incorporation.
+- 2026-09-21T22:22-07:00 `skills/address-pr-comments/SKILL.md`: Synchronized Section 3 update protocol with living document synthesis and comprehensive suggestion incorporation.
+- 2026-09-21T22:22-07:00 `skills/agent-review-loop/thematic-review-pillars.md`: Updated Section 3 self-improvement protocol with living document synthesis and bullet generalization.
+- 2026-09-21T22:22-07:00 `README.md`: Documented living document synthesis model in Shared Pillars File section.
+- 2026-09-21T22:22-07:00 `~/.agents/review-refinements.md`: Rewrote active bullets across 8 pillars into generalized living principles incorporating recent review learnings.
+- 2026-09-21T22:28-07:00 `templates/review-refinements.template.md`: Codified add or merge rules and mandated total bullet cleanup pass to ensure bullets remain organized and evolve over time.
+- 2026-09-21T22:28-07:00 `~/.agents/review-refinements.md`: Synchronized header rules with add or merge directives and total bullet cleanup pass requirement.
+- 2026-09-21T22:28-07:00 `skills/agent-review-loop/SKILL.md`: Updated Section 6 Steps 3, 5, and 7 to enforce add/merge decisions and post-addition total bullet cleanup across pillars.
+- 2026-09-21T22:28-07:00 `skills/agent-review-report/SKILL.md`: Aligned Section 7 Steps 3, 5, and 7 with add/merge and total bullet cleanup directives.
+- 2026-09-21T22:28-07:00 `skills/agent-review-pr-comments/SKILL.md`: Synchronized Section 3 Steps 3, 5, and 7 with add/merge and total bullet cleanup directives.
+- 2026-09-21T22:28-07:00 `skills/agent-review-loop/thematic-review-pillars.md`: Updated Section 3 self-improvement steps with add/merge and total bullet cleanup rules.
+- 2026-09-21T22:28-07:00 `README.md`: Updated Shared Pillars File section with add/merge and total bullet cleanup living document evolution.
+- 2026-09-21T22:28-07:00 `devlog/plans/000001-03-living-document-refinements.md`: Appended add/merge and total bullet cleanup evolution specification.
+- 2026-09-21T22:38-07:00 `devlog/plans/000001-04-prefix-skills-rename-pr-comments.md`: Implementation plan for unifying skill prefixes and renaming address-pr-comments to agent-review-pr-comments.
+- 2026-09-21T22:38-07:00 `skills/agent-review-pr-comments/`: Renamed skill directory from skills/address-pr-comments; updated frontmatter name and openai.yaml metadata.
+- 2026-09-21T22:38-07:00 `install.sh`: Updated SKILLS, skill_files mapping, help text, and invocation hints to agent-review-pr-comments.
+- 2026-09-21T22:38-07:00 `tests/verify-install.sh`: Updated SKILLS list and upgrade tests to verify agent-review-pr-comments.
+- 2026-09-21T22:38-07:00 `README.md`: Updated skill lists, tables, invocation examples, uninstall snippets, and manual copy paths to agent-review-pr-comments.
+- 2026-09-21T22:38-07:00 `skills/agent-review-report/SKILL.md`: Updated suggested next step reference to agent-review-pr-comments.
+- 2026-09-21T22:38-07:00 `skills/agent-review-loop/thematic-review-pillars.md`: Updated shared base pillars skill list to include agent-review-pr-comments.
+- 2026-09-21T22:40-07:00 `install.sh`: Added legacy_skill_name helper and migration handling in upgrade_skill, install_skill_copy, and install_skill_link to migrate address-pr-comments to agent-review-pr-comments and purge obsolete directories.
+- 2026-09-21T22:40-07:00 `tests/verify-install.sh`: Added test assertions in Section 9 verifying --upgrade migrates legacy address-pr-comments to agent-review-pr-comments, updates content, and removes the old directory.
+- 2026-09-21T22:45-07:00 `devlog/plans/000001-05-automatic-refinement-backups.md`: Implementation plan for automatic timestamped refinement backups and prune prompting.
+- 2026-09-21T22:45-07:00 `.gitignore`: Added `.agents/backups/` ignore pattern.
+- 2026-09-21T22:45-07:00 `skills/agent-review-loop/SKILL.md`: Added timestamped backup snapshot step, surgical chunk replacement requirement, structural invariant check, and greater than 5 backup accumulation prune prompt.
+- 2026-09-21T22:45-07:00 `skills/agent-review-report/SKILL.md`: Aligned Section 7 with timestamped backup step, surgical chunk replacement, structural verification, and backup accumulation prune prompt.
+- 2026-09-21T22:45-07:00 `skills/agent-review-pr-comments/SKILL.md`: Aligned Section 3 with timestamped backup step, surgical chunk replacement, structural verification, and backup accumulation prune prompt.
+- 2026-09-21T22:45-07:00 `templates/review-refinements.template.md`: Documented backup preservation rules, surgical editing, and pruning threshold.
+- 2026-09-21T22:45-07:00 `~/.agents/review-refinements.md`: Added header instructions for timestamped backups, chunk-level editing, structural invariants, and pruning threshold prompt.
+- 2026-09-21T22:45-07:00 `README.md`: Documented automatic timestamped backups and maintenance under Shared Pillars File.
 
 ## Issues
 
@@ -77,4 +115,6 @@
 - 5cc6428: feat: incorporate agent-review-report skill
 - a1dd2fe: feat(refinements): codify canonical SWE pillar update protocol for review refinements
 - 063bb3f: fix(review): harden installer, verification harness, and skill lifecycles
-- HEAD: fix(agent-review-report): scope read-only invariant to code under review
+- d1d139a: fix(agent-review-report): scope read-only invariant to code under review
+- HEAD: feat: adopt living document refinements, unified prefix, and automated backups
+

@@ -3,7 +3,7 @@
 This document defines the **8 Core Thematic Pillars** (the defaults) and the
 **self-improvement protocol** shared by every review loop that files
 learnings into the refinements file (`agent-review-loop`,
-`agent-review-report`, and `address-pr-comments`).
+`agent-review-report`, and `agent-review-pr-comments`).
 
 It travels with the skill and stays stable. Automated learning never edits
 this file; it writes to the Tier 2 file instead.
@@ -119,16 +119,27 @@ When a review loop learns a recurring pattern worth keeping:
    then repo-local for repo-specific lessons, creating that file when it is
    missing, else canonical). Never write the legacy path. Never edit this
    base file or any skill definition.
-2. **Subsumption**: map the pattern into one of the 8 pillars. Extend an
-   overlapping bullet instead of adding a sibling.
-3. **Generalization**: abstract away file names, line numbers, and variable
+2. **Automatic timestamped backup**: before modifying the file, create a
+   timestamped snapshot in `backups/review-refinements-YYYYMMDD-HHMMSS.md`.
+   If more than 5 backups accumulate in `backups/`, ask the user in chat
+   whether they would like to prune older backups (keeping the latest 5).
+3. **Add or merge (living document evolution)**: map every suggestion into one
+   of the 8 pillars. For each suggestion, merge it into an existing bullet by
+   actively rewriting it broader, or add it as a distinct general bullet.
+4. **Clean up total bullets**: do not just keep adding new bullets without
+   cleaning up the total bullets after adding them. Review all bullets under the
+   pillar, consolidate overlapping concepts, eliminate redundancies, and
+   reorganize them so the document evolves into an organized living reference.
+5. **Generalization**: abstract away file names, line numbers, and variable
    names. State trigger, hazard, and fix shape so the bullet helps a future
    review in a different file. Standing rule for canonical: the bullet must
    help a review in a different repo on a different stack; if it cannot be
    stated that generally, abstract it or file it repo-local.
-4. **Theme clustering**: merge related micro-issues into one cohesive
-   principle. Cap each loop run at 5 new or refined bullets.
-5. **Multi-agent safety**: re-read the target file immediately before
-   editing; keep bullets tool-agnostic (no agent, model, runtime, or tool
-   names); add no signatures or date tags; append or refine only, never
-   delete, reword wholesale, or reformat.
+6. **Comprehensive incorporation without quotas**: incorporate all actionable
+   suggestions from the review, adding or merging them into cohesive principles
+   without dropping findings due to quotas.
+7. **Multi-agent safety & surgical editing**: re-read the target file
+   immediately before editing; use surgical chunk replacement tools (never
+   overwrite the entire file); keep bullets tool-agnostic (no agent, model,
+   runtime, or tool names); add no signatures or date tags; verify that all 8
+   canonical pillar headings remain intact byte-for-byte.
