@@ -24,9 +24,11 @@ tool at all, use the sequential fallback in that same table.
    or spaced hyphens as punctuation in prose. `--` stays allowed in
    command flags, code, and quoted output. In prose, use colons, commas,
    semicolons, parentheses, or separate sentences.
-3. **Read only**: report findings and edit nothing. No file edits, no
-   commits, no pushes, no review thread resolves, no CI cancellations.
-   Propose concrete fixes in the report; do not apply them.
+3. **Read only on reviewed code**: report findings and edit no project code
+   or files under review (no code edits, no commits, no pushes, no review
+   thread resolves, no CI cancellations). Propose concrete fixes in the
+   report; do not apply them. The only permitted file modification is filing
+   shared learnings to the refinements file per section 7.
 4. **No unapproved posts**: never comment on a PR without explicit human
    approval in this session for this report. Presenting findings in chat
    is not approval to post them.

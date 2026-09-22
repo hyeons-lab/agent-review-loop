@@ -19,6 +19,7 @@
 - 2026-09-21T19:39-07:00 Guard atomic file copy against directory collisions: In copy_atomic, reject destination paths that are existing directories before creating temporary staging files to avoid silently moving temporary files into directories.
 - 2026-09-21T19:39-07:00 Retain diagnostic logs on test assertion failures: Updated verify-install.sh harness trap to retain the log directory and print failed command output when assertions fail, ensuring CI and local debugging have full error context.
 - 2026-09-21T19:39-07:00 Unconditionally decouple diff scratch cleanup from PR posting approval: Moved scratch diff file cleanup in agent-review-report to a dedicated concluding section so that local reviews and unapproved PR reviews do not leak temporary files.
+- 2026-09-21T19:58-07:00 Explicitly scope read-only invariant in agent-review-report: Core Invariant 3 was scoped specifically to the repository and code under review, making the refinements file an explicit exception per Section 7 so reviewers are not blocked from recording durable learnings.
 
 ## What Changed
 
@@ -65,6 +66,7 @@
 - 2026-09-21T19:39-07:00 `skills/address-pr-comments/SKILL.md`: Added error check on mktemp -d for scratch_dir and hardened parameter expansion in cleanup trap.
 - 2026-09-21T19:39-07:00 `install.sh`: Added directory destination guard in copy_atomic, simplified destination directory existence check in install_skill_copy, consolidated target normalization and deduplication into a single pass, and updated /agent-review-report invocation placeholder to [<pr>].
 - 2026-09-21T19:39-07:00 `tests/verify-install.sh`: Hardened test harness with cleanup function retaining diagnostic logs on failure, captured failure output in check helper, added non-owner file readability assertion, and added assertion for 35 planned file installs on empty-home dry run.
+- 2026-09-21T19:58-07:00 `skills/agent-review-report/SKILL.md`: Scoped Core Invariant 3 to code under review and clarified the refinements write exception to resolve Copilot review finding.
 
 ## Issues
 
@@ -74,4 +76,5 @@
 - cddbd79: refactor: adopt canonical software engineering review pillars
 - 5cc6428: feat: incorporate agent-review-report skill
 - a1dd2fe: feat(refinements): codify canonical SWE pillar update protocol for review refinements
-- HEAD: fix(review): harden installer, verification harness, and skill lifecycles
+- 063bb3f: fix(review): harden installer, verification harness, and skill lifecycles
+- HEAD: fix(agent-review-report): scope read-only invariant to code under review
