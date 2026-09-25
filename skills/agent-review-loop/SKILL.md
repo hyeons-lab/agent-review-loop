@@ -165,6 +165,18 @@ subagent if your runtime supports it, proceed with the reports in hand, note
 the missing lens in the round summary, and treat its pillars as uncovered next
 round.
 
+Stall detection runs on the progress files from the heartbeat rule below,
+not on the runtime roster alone: a reviewer counts as stalled when its
+progress file shows no new line for 15 minutes (counted from spawn or from
+its last line), even when the runtime still lists it as running. On a
+stalled reviewer, message it once asking for an immediate heartbeat line;
+if the file is still silent 5 minutes later, cancel or terminate it and
+spawn one replacement reviewer for the same lens with the same brief. If
+the replacement also stalls, proceed with the reports in hand, note the
+missing lens in the round summary, and treat its pillars as uncovered next
+round. Never let a silent reviewer hold the round open past one stall
+window plus one grace period plus one replacement.
+
 <!-- Mirrored with skills/agent-review-report/SKILL.md: keep runtime rows in sync. -->
 | Runtime | How to spawn one reviewer per lens | How to collect |
 |---|---|---|
@@ -194,6 +206,21 @@ Every reviewer prompt must include:
   claim that a test pins a behavior must be proven non-vacuous: show the
   test fails with the fix reverted (or the behavior present without the
   guard). Reading alone is not evidence for behavior.
+- Exact paths and bounded search: give the absolute path of every file the
+  reviewer must read (diff, pillars, learnings files, repo guidance), so
+  nothing needs locating. The reviewer must not run unbounded filesystem
+  scans (`find /`, `ls -R` from the filesystem root, unscoped recursive
+  greps) to locate them; scope every search to the repository or worktree.
+  An unbounded scan parks the reviewer behind a result it never needs and
+  stalls the whole round.
+- A progress heartbeat: before spawning, create one progress file per
+  reviewer (for example `/tmp/agent-review-loop-r<N>-<lens>.progress`)
+  and pass its path in the brief. The reviewer appends one timestamped
+  line per step (brief read, diff read, each test or probe command
+  started and finished, verdict written) and, during any single command
+  that runs longer than 10 minutes, one line every 10 minutes. These
+  files drive the stall rule above and let the human watch the round
+  with `tail -f`.
 - The finding format: `SEVERITY | file_path:line_number | one-line
   description | why it matters`, with `SEVERITY` in `bug`, `correctness`,
   `convention`, `quality`, or `nitpick`. Every non-nitpick needs a hazard
@@ -401,4 +428,5 @@ Follow this exact sequence whenever filing learnings:
    Present the proposed commit message in the repo's convention and ask for
    explicit confirmation first.
 3. **Scratch diff cleanup**: always clean up the scratch diff file created in
-   section 4 (`rm -f "$diff_file"`).
+   section 4 (`rm -f "$diff_file"`) and every per-reviewer progress file
+   created during the loop.
