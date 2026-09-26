@@ -33,8 +33,9 @@ tool at all, use the sequential fallback in that same table.
    approval in this session for this report. Presenting findings in chat
    is not approval to post them.
 5. **Credential redaction**: ensure secrets, API keys, passwords, and private
-   tokens are redacted from reports and PR comments; use placeholders like
-   `<REDACTED_SECRET>` instead.
+   tokens are redacted from reports, PR comments, and every progress
+   heartbeat file in the run (pillar reviewers, synthesis, and
+   replacements); use placeholders like `<REDACTED_SECRET>` instead.
 
 ## 1. Review Target
 
@@ -73,11 +74,11 @@ The skill takes an optional target argument:
   pr_number="$(gh pr view "$pr_input" --json number --jq .number)" || { echo "ERROR: gh pr view failed for $pr_input; check PR number or URL" >&2; exit 1; }
   [[ "$pr_number" =~ ^[0-9]+$ ]] || { echo "ERROR: resolved PR number is non-numeric: $pr_number" >&2; exit 1; }
   diff_file="$(mktemp "${TMPDIR:-/tmp}/agent-review-report-diff.XXXXXX")"
-  sha_before=$(gh pr view "$pr_number" --json headRefOid --jq .headRefOid) || { echo "ERROR: gh pr view failed for PR $pr_number; aborting, head SHA unknown" >&2; rm -f "$diff_file"; exit 1; }
-  [ -n "$sha_before" ] && [ "$sha_before" != "null" ] || { echo "ERROR: head SHA missing for PR $pr_number; aborting" >&2; rm -f "$diff_file"; exit 1; }
-  gh pr diff "$pr_number" > "$diff_file" || { echo "ERROR: gh pr diff failed for PR $pr_number; aborting, diff not fetched" >&2; rm -f "$diff_file"; exit 1; }
-  [ -s "$diff_file" ] || { echo "ERROR: empty diff for PR $pr_number; aborting rather than reviewing nothing" >&2; rm -f "$diff_file"; exit 1; }
-  sha_after=$(gh pr view "$pr_number" --json headRefOid --jq .headRefOid) || { echo "ERROR: gh pr view failed for PR $pr_number; aborting, head SHA unknown" >&2; rm -f "$diff_file"; exit 1; }
+  sha_before=$(gh pr view "$pr_number" --json headRefOid --jq .headRefOid) || { echo "ERROR: gh pr view failed for PR $pr_number; aborting, head SHA unknown" >&2; rm -f "${diff_file:?}"; exit 1; }
+  [ -n "$sha_before" ] && [ "$sha_before" != "null" ] || { echo "ERROR: head SHA missing for PR $pr_number; aborting" >&2; rm -f "${diff_file:?}"; exit 1; }
+  gh pr diff "$pr_number" > "$diff_file" || { echo "ERROR: gh pr diff failed for PR $pr_number; aborting, diff not fetched" >&2; rm -f "${diff_file:?}"; exit 1; }
+  [ -s "$diff_file" ] || { echo "ERROR: empty diff for PR $pr_number; aborting rather than reviewing nothing" >&2; rm -f "${diff_file:?}"; exit 1; }
+  sha_after=$(gh pr view "$pr_number" --json headRefOid --jq .headRefOid) || { echo "ERROR: gh pr view failed for PR $pr_number; aborting, head SHA unknown" >&2; rm -f "${diff_file:?}"; exit 1; }
   ```
   When `sha_before` and `sha_after` differ, a push landed mid-fetch:
   refetch once more (at most 3 attempts total, then report the drift
@@ -88,7 +89,7 @@ The skill takes an optional target argument:
 Save the filtered diff to a uniquely named scratch file under
 `${TMPDIR:-/tmp}` (for example via `mktemp`) so concurrent runs never
 share it and reviewers can inspect it without context truncation. Clean up the
-scratch diff file when the report finishes (`rm -f "$diff_file"`). For a
+scratch diff file when the report finishes (deleted in section 8 with the guarded cleanup). For a
 PR target, apply the same exclusions by path when reading the fetched
 diff. Never review a diff you have not read; never let a reviewer
 report stand in for reading the changed code.
@@ -130,11 +131,23 @@ starts blind.
 ## 4. The Review Protocol (One Round, Max Fan-Out)
 
 Run exactly one review round: 8 parallel reviewers, one per pillar. Only
-after all 8 reports have returned (or timed out after one re-prompt), run one
-synthesis reviewer that reconciles overlaps before you see the report. If all
+after all 8 reports have returned (or stalled out under the stall rule
+below), run one
+synthesis reviewer that reconciles overlaps before you see the report, but only when two or more reports were received; with zero or one report skip synthesis and present directly (a single report needs no reconciliation). If all
 reviewers reported NO FINDINGS, skip spawning a synthesis reviewer and present
-NO FINDINGS directly. If a reviewer has timed out, cancel or terminate it
+NO FINDINGS directly. If a reviewer has stalled out, cancel or terminate it
 according to your runtime's lifecycle management before invoking synthesis.
+A synthesis subagent gets a progress file (`<progress_dir>/synthesis.progress`)
+under the same stall rule with one replacement at
+`<progress_dir>/synthesis-retry1.progress` (created empty before
+spawning; watch the new file, never the old; suffix the replacement task
+name `-retry1`; fresh 15 plus 5 window from its own spawn); if it also
+stalls, cancel or terminate it (if the runtime cannot cancel, note `uncancellable, ignored if it later reports`) and present the unreconciled pillar reports with a Coverage note
+instead of blocking. The synthesis brief carries the same
+redact-at-write-time rule as pillar reviewers: write
+`<REDACTED_SECRET>` in place of every secret, token, or
+credential-bearing argument, including inside the command name; never
+paste unredacted credentials into the progress file.
 Never spawn synthesis concurrently with the pillar reviewers. When your runtime
 caps concurrent subagents, run the reviewers in waves inside the same round.
 Coverage stays fixed; only the scheduling bends.
@@ -158,7 +171,43 @@ default timeout, re-prompt it once; if still silent, cancel or terminate the
 subagent if your runtime supports it, proceed with the reports in hand, note
 the missing lens in the report header, and treat its pillars as uncovered.
 
-<!-- Mirrored with skills/agent-review-loop/SKILL.md: keep runtime rows in sync. -->
+The heartbeat stall rule below governs whenever progress files exist; the
+runtime-timeout sentence above applies only when they do not (sequential
+fallback, or progress setup failed) or as an outer bound when the runtime
+drops the reviewer first. The one re-prompt and the one heartbeat nudge
+are the same single nudge, not two. A runtime drop consumes that single
+nudge: cancel any remnant, spawn one replacement immediately with no
+grace wait on the dropped original, exactly as the stall path below
+specifies (fresh empty retry1 file created before spawning, fresh 15
+minute window plus one 5 minute grace counted from the replacement's own
+spawn, task name suffixed `-retry1`). The runtime bound then caps the replacement
+too: if the runtime kills the replacement first, proceed with no second
+replacement.
+
+<!-- Mirrored with skills/agent-review-loop/SKILL.md: keep stall timings and replacement flow in sync; only the missing-lens destination (report header here, round summary plus dirty set there) and the per-round r<N>- retry path prefix (single round here, multi-round there) differ. -->
+Stall detection runs on the progress files from the heartbeat rule below,
+not on the runtime roster alone: a reviewer counts as stalled when its
+progress file shows no new line for 15 minutes (counted from spawn or from
+its last line), even when the runtime still lists it as running. On a
+stalled reviewer, message it once asking for an immediate heartbeat line;
+if the file is still silent 5 minutes later, cancel or terminate it and
+spawn one replacement reviewer for the same lens with a fresh empty
+progress file at `<progress_dir>/<lens>-retry1.progress` (created
+empty before spawning) and the same brief except for the new progress
+path. Watch the new file for the replacement stall window, never the
+old file. Suffix the replacement task name on every runtime (for
+example `<name>-retry1`), so the dead worker and its replacement never
+share a roster entry. The replacement's stall window is counted from its
+own spawn: one fresh 15 minute window plus one 5 minute grace. If the
+original stalls but its replacement reports, evaluate the lens from the
+replacement's report and ignore any late report from the original; if
+the original cannot be cancelled, note `uncancellable, ignored if it
+later reports`. If the replacement also stalls, cancel or terminate it (if the runtime cannot cancel, note `uncancellable, ignored if it later reports`) and then proceed with the reports
+in hand, note the missing lens in the report header, and treat its pillars
+as uncovered. Never let a silent reviewer hold the round open past the
+original window plus grace plus the replacement window plus grace.
+
+<!-- Mirrored with skills/agent-review-loop/SKILL.md: keep runtime rows in sync; intended differences only: collect verbs (classifying there, synthesizing here) and the Codex example task name. -->
 | Runtime | How to spawn one reviewer per lens | How to collect |
 |---|---|---|
 | Muse | `subagent_spawn`, one child per reviewer in a single fan-out | `subagent_wait` on every child before synthesizing |
@@ -167,7 +216,7 @@ the missing lens in the report header, and treat its pillars as uncovered.
 | Antigravity/Gemini | `invoke_subagent` with `TypeName` self or research and a distinct `Role` per reviewer | the call blocks until every reviewer in the round has reported; proceed only when all reports are in |
 | Any other runtime | Sequential fallback: run one review pass per lens yourself, re-reading the diff fresh for each pass so earlier passes never narrow later ones | all passes complete before synthesizing |
 
-<!-- Mirrored with skills/agent-review-loop/SKILL.md: keep reviewer prompt bullets in sync. -->
+<!-- Mirrored with skills/agent-review-loop/SKILL.md: keep reviewer prompt bullets in sync; intended differences only: round-scope bullet, loop-only bullets-filed bullet, heartbeat naming/prefix, diff section ref plus PR drift line, guidance base-pillars ref. -->
 Every reviewer prompt must include:
 
 - The scratch path of the filtered diff saved in section 1, plus its line
@@ -179,12 +228,67 @@ Every reviewer prompt must include:
   `CLAUDE.md`, `GEMINI.md`, `.editorconfig`, CI workflows), the base
   pillars (section 2, tier 1), and every shared learnings file that
   exists.
+- The round scope: every lens runs in the single round. The reviewer
+  audits the current filtered diff against its own pillars only, but
+  flags a severe hazard clearly owned by another lens in one line
+  shaped `FLAG | lens <n> | file_path:line_number | one-line hazard`,
+  so the overlap is visible before synthesis.
 - A read-only rule: reviewers report findings and edit nothing.
 - An execution rule: behavior claims must be checked by running the repo's
   own tests or a minimal reproduction, quoted as command plus result. A
   claim that a test pins a behavior must be proven non-vacuous: show the
-  test fails with the behavior present without the guard. Reading alone
+  test fails with the behavior present without the guard; for fixes with
+  no guard to remove, replicate the old and new logic in a scratch probe
+  outside the repo and show the old fails while the new passes. Reading alone
   is not evidence for behavior.
+- Exact paths and bounded search: give the absolute path of every file the
+  reviewer must read (diff, pillars, learnings files, repo guidance), so
+  nothing needs locating. The reviewer must not run unbounded filesystem
+  scans (`find /`, `ls -R` from the filesystem root, unscoped recursive
+  greps) to locate them; scope every search to the repository or worktree.
+  An unbounded scan parks the reviewer behind a result it never needs and
+  stalls the whole round.
+- A progress heartbeat: once per report run, before the first spawn,
+  create one run-unique progress directory with `progress_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-review-report.XXXXXX")"`
+  (one directory per report run, so concurrent runs never share it) and
+  print its path. Before the round's spawn, create one fresh empty
+  progress file per reviewer
+  (`<progress_dir>/<lens>.progress`, where `<lens>` is the
+  reviewer number, for example `reviewer1`); when it already exists,
+  refuse and recreate when it is a symlink or not a regular file: `rm -f
+  "$path"` then `: > "$path"` immediately in the same step before
+  spawning; otherwise truncate a validated regular file (`: > "$path"`);
+  never open for write before the symlink test passes; and pass its path
+  in the brief. Record
+  each reviewer's spawn timestamp at spawn by first applying the same
+  symlink refuse-and-recreate to `<progress_dir>/spawns.log` (`[ -L ] ||
+  [ ! -f ]` means `rm -f` then `: >` before appending), then appending
+  one `spawned <id> <ISO8601>` line per spawn (originals, `-retry1`
+  replacements, and synthesis; `<id>` is the progress-file stem, for
+  example `reviewer2`, `reviewer2-retry1`, `synthesis`) to
+  `<progress_dir>/spawns.log` (read it when adjudicating a silent file);
+  a reviewer not yet spawned
+  (a later wave) is never stalled regardless of file age, and silence
+  is measured from spawn, never from file creation time. The reviewer
+  appends one timestamped line per step (brief read, guidance and
+  pillars and learnings reads, diff read, each test or probe command
+  started and finished, verdict written) and one line every 10 minutes
+  regardless of activity, so no silent stretch ever reaches the 15
+  minute stall window. Name each probe command in heartbeat lines with
+  secrets redacted at write time (write `<REDACTED_SECRET>` in place of
+  every secret, token, or credential-bearing argument, including inside
+  the command name); never paste unredacted credentials into them. These files
+  drive the stall rule above and let the human watch the round with
+  `tail -f "$progress_dir"/*.progress`. Never delete a path that
+  is not inside `${TMPDIR:-/tmp}` under an `agent-review-report.`,
+  `agent-review-report-diff.`, or `agent-review-report-comment.` prefix
+  (canonicalized, symlinks resolved); refuse and report instead. Spell
+  the check once: `tmpcanon=$(realpath "${TMPDIR:-/tmp}" 2>/dev/null ||
+  readlink -f "${TMPDIR:-/tmp}")` and `real=$(realpath "$path"
+  2>/dev/null || readlink -f "$path")`, then require `$real` to start
+  with `$tmpcanon/agent-review-report.`,
+  `$tmpcanon/agent-review-report-diff.`, or
+  `$tmpcanon/agent-review-report-comment.`.
 - The finding format: `SEVERITY | file_path:line_number | one-line
   description | why it matters`, with `SEVERITY` in `bug`, `correctness`,
   `convention`, `quality`, or `nitpick`. Every non-nitpick needs a hazard
@@ -206,12 +310,29 @@ findings:
   diff) or PR number plus the head SHA the diff was fetched at, so a
   mid-run push shows as drift; plus the criteria marker from section 2
   (`criteria: full base pillars`, or the titles-only fallback marker).
-2. **Findings**: every finding with severity, `file_path:line_number`,
+2. **Coverage**: `full` only when every lens reported with no stall this
+  round and synthesis (when spawned) reported with no stall. Otherwise
+  list each stalled, missing, or recovered lens: lens; pillars covered
+  (`recovered after nudge`, `replacement reported`) vs uncovered
+  (`replacement also stalled`, `replaced then capped (outer bound)`,
+  `not replaced`); last heartbeat timestamp with the operative file's
+  last line quoted, secrets redacted per invariant 5 (original file for
+  recovered/not-replaced, replacement file for
+  replacement-reported/also-stalled/capped, both when both have lines;
+  `no heartbeat lines` when the operative file exists but is empty,
+  `no progress file` when no file exists under sequential fallback or
+  failed progress setup); outcome as one of the five above, plus, when
+  synthesis was spawned and stalled or was replaced, one synthesis row:
+  `synthesis`, covered vs uncovered per the same five outcomes, operative
+  file per the same file rules. A recovered
+  stall stays listed; it never collapses back to `full`.
+3. **Findings**: every finding with severity, `file_path:line_number`,
   one-line description, hazard explanation, and concrete fix. Group
   duplicates once with all affected locations. When every reviewer
   returned `NO FINDINGS`, say so explicitly instead of padding the
-  report.
-3. **Suggested next step**: name the skill that fits what the user might
+  report. When no reviewer reported, Findings states `no reports received;
+  pillars uncovered` and never `NO FINDINGS`.
+4. **Suggested next step**: name the skill that fits what the user might
   want next (`agent-review-loop` to fix the diff in a loop,
   `agent-review-pr-comments` once PR feedback lands). Suggest only; never
   invoke another skill unasked.
@@ -233,7 +354,7 @@ On explicit approval:
    comment_file="$(mktemp "${TMPDIR:-/tmp}/agent-review-report-comment.XXXXXX")"
    # ... render the presented report into "$comment_file" ...
    gh pr comment <pr_number> --body-file "$comment_file"
-   rm -f "$comment_file"
+   rm -f "${comment_file:?}"
    ```
 3. Report the posted comment URL back to the user.
 
@@ -273,7 +394,7 @@ the write. Never edit from the copy loaded at review start; another loop
 may have filed bullets since. When a fresh read shows your lesson already
 covered, subsume instead of duplicating.
 
-<!-- Mirrored with skills/agent-review-loop/SKILL.md: keep pillar filing rules in sync. -->
+<!-- Mirrored with skills/agent-review-loop/SKILL.md: keep pillar filing rules in sync; intended differences only: round vs review wording and the loop-only `Learnings filed: none` report line. -->
 ### How to Update the Refinements File Correctly
 
 Follow this exact sequence whenever filing learnings:
@@ -308,8 +429,6 @@ Follow this exact sequence whenever filing learnings:
    - `### Pillar 7: Code Simplification, Clean Architecture & Maintainability`
    - `### Pillar 8: Testing, Observability & Verification Invariants`
    Never invent custom pillar titles, rename a pillar, or add a 9th pillar.
-   Every bullet filed in canonical must help across stacks and repositories;
-   lessons specific to one repository belong in repo-local refinements.
 4. **Add or merge (living document evolution)**: Read existing bullets under
    that pillar's heading. Incorporate all actionable suggestions, optimizations,
    and durable failure modes without arbitrary numerical quotas. If the review
@@ -360,5 +479,11 @@ Follow this exact sequence whenever filing learnings:
 
 ## 8. Finishing Up
 
-Always clean up the scratch diff file created in section 1 (`rm -f "$diff_file"`).
+Always clean up the scratch diff file created in section 1 (first re-apply the section 4 prefix check on the canonicalized path and refuse on mismatch, then `rm -f "${diff_file:?}"`)
+and the run's progress directory (first re-apply the section 4 prefix
+check on the canonicalized path and refuse on mismatch, then `rm -rf
+"${progress_dir:?}"`), after quoting each missing lens's last progress
+line, with secrets redacted per invariant 5 (or `no heartbeat lines`
+when the operative file exists but is empty, or `no progress file` when
+no file exists), into the report.
 

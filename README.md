@@ -2,8 +2,11 @@
 
 Three multi-agent review skills sharing one pillars file:
 `agent-review-loop` reviews the working diff with subagents at a fixed
-effort (`low`, `medium`, `high`, `max`), fixes what they find, and
-re-reviews until clean; `agent-review-report` runs one report-only `max`
+effort (`low`, `medium`, `high`, `max`), fixes what they find,
+re-reviews only the dirty lenses (actionable findings plus any flagged
+or missing lens), and confirms each clean or nitpicks-only subset with
+a full round; `agent-review-report`
+runs one report-only `max`
 review over the working diff or a target PR and presents the findings;
 and `agent-review-pr-comments` addresses review feedback on a target PR and
 syncs the stack. All three file novel learnings as they go (each round,
