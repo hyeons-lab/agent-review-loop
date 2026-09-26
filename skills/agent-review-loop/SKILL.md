@@ -329,15 +329,18 @@ Every reviewer prompt must include:
   print its path. Before each round's spawn, create one fresh empty
   progress file per reviewer in that round
   (`<progress_dir>/r<N>-<lens>.progress`, where `<lens>` is the
-  reviewer number, for example `reviewer1`); when it already exists,
-  refuse and recreate when it is a symlink or not a regular file: `rm -f
-  "$path"` then `: > "$path"` immediately in the same step before
-  spawning; otherwise truncate a validated regular file (`: > "$path"`);
+  reviewer number, for example `reviewer1`, bound to `path` before the
+  check); when it already exists: if it is a symlink, remove just the
+  link (`rm -f "$path"`) and recreate (`: > "$path"`) immediately in
+  the same step before spawning; if it exists but is not a regular
+  file, abort with a report instead of deleting (never `rm -rf`);
+  otherwise truncate a validated regular file (`: > "$path"`);
   never open for write before the symlink test passes; and pass its path
   in the brief. Record
   each reviewer's spawn timestamp at spawn by first applying the same
-  symlink refuse-and-recreate to `<progress_dir>/spawns.log` (`[ -L ] ||
-  [ ! -f ]` means `rm -f` then `: >` before appending), then appending
+  guard to `<progress_dir>/spawns.log` (bound to `path`: a symlink
+  means `rm -f` then `: >` before appending, existing-but-not-regular
+  means abort with a report), then appending
   one `spawned <id> <ISO8601>` line per spawn (originals, `-retry1`
   replacements, synthesis, and fix-check attempts; `<id>` is the
   progress-file stem, for example `r3-reviewer2`, `r3-reviewer2-retry1`,
@@ -355,7 +358,7 @@ Every reviewer prompt must include:
   every secret, token, or credential-bearing argument, including inside
   the command name); never paste unredacted credentials into them. These files
   drive the stall rule above and let the human watch the round with
-  `tail -f "$progress_dir"/r<N>-*.progress`. Never delete a path that
+  `tail -f "$progress_dir"/r*-*.progress`. Never delete a path that
   is not inside `${TMPDIR:-/tmp}` under an `agent-review-loop.` or
   `agent-review-loop-diff.` prefix (canonicalized, symlinks resolved);
   refuse and report instead. Spell the check once:

@@ -254,15 +254,18 @@ Every reviewer prompt must include:
   print its path. Before the round's spawn, create one fresh empty
   progress file per reviewer
   (`<progress_dir>/<lens>.progress`, where `<lens>` is the
-  reviewer number, for example `reviewer1`); when it already exists,
-  refuse and recreate when it is a symlink or not a regular file: `rm -f
-  "$path"` then `: > "$path"` immediately in the same step before
-  spawning; otherwise truncate a validated regular file (`: > "$path"`);
+  reviewer number, for example `reviewer1`, bound to `path` before the
+  check); when it already exists: if it is a symlink, remove just the
+  link (`rm -f "$path"`) and recreate (`: > "$path"`) immediately in
+  the same step before spawning; if it exists but is not a regular
+  file, abort with a report instead of deleting (never `rm -rf`);
+  otherwise truncate a validated regular file (`: > "$path"`);
   never open for write before the symlink test passes; and pass its path
   in the brief. Record
   each reviewer's spawn timestamp at spawn by first applying the same
-  symlink refuse-and-recreate to `<progress_dir>/spawns.log` (`[ -L ] ||
-  [ ! -f ]` means `rm -f` then `: >` before appending), then appending
+  guard to `<progress_dir>/spawns.log` (bound to `path`: a symlink
+  means `rm -f` then `: >` before appending, existing-but-not-regular
+  means abort with a report), then appending
   one `spawned <id> <ISO8601>` line per spawn (originals, `-retry1`
   replacements, and synthesis; `<id>` is the progress-file stem, for
   example `reviewer2`, `reviewer2-retry1`, `synthesis`) to
