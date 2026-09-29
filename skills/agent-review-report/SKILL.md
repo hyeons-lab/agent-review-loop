@@ -44,42 +44,168 @@ The skill takes an optional target argument:
 - **No argument**: review the **working-tree diff** (staged plus
   unstaged). When the tree is clean but the branch is ahead of its base,
   review the **branch diff** (`git diff <base>...HEAD`, base from the
-  merge-base with the default branch). Inside a worktree, run every
-  `git` command with `git -C <worktree>`. Filter out lockfiles, generated
+  merge-base with the default branch). Inside a worktree, `cd` into
+  the INNERMOST worktree containing the files under review first and run
+  every fenced block below unmodified; never sprinkle `-C` inside the
+  mirrored spans (a partial rewrite splits state: in normal repos
+  `--git-path` returns relative `.git/info/exclude`, so a half-converted
+  block writes the wrong cwd's file); never nest a worktree inside
+  another checkout (inner scratch leaks into the outer repo's untracked
+  files). Filter out lockfiles, generated
   code, and binary artifacts into a scratch file:
+  <!-- Bootstrap mirror: the 7 run-root bootstraps (loop section 4 plus heartbeat, report section 1 working-diff plus PR plus heartbeat plus section 6, pr-comments section 1A) stay identical modulo list indentation and reaper name pattern. -->
   ```bash
-  if git diff --quiet HEAD -- .; then
+  unset GIT_DIR GIT_WORK_TREE GIT_EXTERNAL_DIFF GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
+  cfg_n="${GIT_CONFIG_COUNT:-0}"; unset GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS; cfg_i=0; while [ "$cfg_i" -lt "$cfg_n" ] 2>/dev/null && [ "$cfg_i" -lt 128 ]; do unset "GIT_CONFIG_KEY_$cfg_i" "GIT_CONFIG_VALUE_$cfg_i"; cfg_i=$((cfg_i+1)); done; unset cfg_n cfg_i
+  if git diff --quiet HEAD --; then
     base="$(git merge-base origin/main HEAD 2>/dev/null || git merge-base main HEAD 2>/dev/null || echo "origin/main")"
     diff_target="${base}...HEAD"
   else
     diff_target="HEAD"
   fi
 
-  diff_file="$(mktemp "${TMPDIR:-/tmp}/agent-review-report-diff.XXXXXX")"
-  git --no-pager diff "${diff_target}" -- . \
+  # Mirror: 7 run-root bootstraps stay identical (modulo indentation, reaper pattern).
+  unset GIT_DIR GIT_WORK_TREE GIT_EXTERNAL_DIFF GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
+  cfg_n="${GIT_CONFIG_COUNT:-0}"; unset GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS; cfg_i=0; while [ "$cfg_i" -lt "$cfg_n" ] 2>/dev/null && [ "$cfg_i" -lt 128 ]; do unset "GIT_CONFIG_KEY_$cfg_i" "GIT_CONFIG_VALUE_$cfg_i"; cfg_i=$((cfg_i+1)); done; unset cfg_n cfg_i
+  tmpbase="$(cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)" || tmpbase=""; [ "$tmpbase" = "/" ] || tmpbase="${tmpbase%/}"
+  if toplevel="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -w "$toplevel" ] && [ -O "$toplevel" ]; then
+    root_base="$toplevel"; fallback=""
+  else
+    if [ -n "${toplevel:-}" ]; then echo "notice: toplevel ${toplevel:-} unusable (unwritable or foreign-owned); using per-user TMPDIR fallback" >&2; fi
+    toplevel=""
+    case "${TMPDIR:-/tmp}" in /*) :;; *) echo "ERROR: TMPDIR ${TMPDIR:-/tmp} is not absolute; refusing" >&2; exit 1;; esac
+    [ -n "$tmpbase" ] || { echo "ERROR: cannot resolve TMPDIR ${TMPDIR:-/tmp}" >&2; exit 1; }
+    [ "${#tmpbase}" -lt 800 ] || { echo "ERROR: TMPDIR ${TMPDIR:-/tmp} resolves to a ${#tmpbase}-character path; shorten TMPDIR or unset it" >&2; exit 1; }
+    root_base="$tmpbase/agent-tmp-$(id -un 2>/dev/null || id -u 2>/dev/null || echo "uid${UID:-unknown}")"; fallback=1  # TMPDIR fallback: skips git exclude, OS may reap
+    [ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base is a symlink; refusing" >&2; exit 1; }
+    if mkdir -m 700 "$root_base" 2>/dev/null; then :; elif [ ! -d "$root_base" ] || [ -L "$root_base" ]; then echo "ERROR: cannot create fallback parent $root_base" >&2; exit 1; fi
+    [ -O "$root_base" ] || { echo "ERROR: fallback parent $root_base not owned by effective user; refusing" >&2; exit 1; }
+    [ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base changed under us; refusing" >&2; exit 1; }
+    chmod 700 "$root_base" || { echo "ERROR: cannot secure fallback parent $root_base" >&2; exit 1; }
+    [ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base changed under us; refusing" >&2; exit 1; }
+  fi
+  if [ -z "$fallback" ] && [ -e "$root_base/.agent-tmp" ] && [ ! -O "$root_base/.agent-tmp" ]; then
+    root_base_safe="$(printf '%s' "$root_base/.agent-tmp" | sed "s/'/'\\\\''/g")"
+    echo "notice: $root_base/.agent-tmp not owned by effective user (sudo residue?); using per-user fallback (before restoring repo-local runs, check for live runs with: ls '$root_base_safe'; coordinate with the owning user, then run: sudo rm -rf '$root_base_safe')" >&2
+    toplevel=""
+    case "${TMPDIR:-/tmp}" in /*) :;; *) echo "ERROR: TMPDIR ${TMPDIR:-/tmp} is not absolute; refusing" >&2; exit 1;; esac
+    [ -n "$tmpbase" ] || { echo "ERROR: cannot resolve TMPDIR ${TMPDIR:-/tmp}" >&2; exit 1; }
+    [ "${#tmpbase}" -lt 800 ] || { echo "ERROR: TMPDIR ${TMPDIR:-/tmp} resolves to a ${#tmpbase}-character path; shorten TMPDIR or unset it" >&2; exit 1; }
+    root_base="$tmpbase/agent-tmp-$(id -un 2>/dev/null || id -u 2>/dev/null || echo "uid${UID:-unknown}")"; fallback=1
+    [ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base is a symlink; refusing" >&2; exit 1; }
+    if mkdir -m 700 "$root_base" 2>/dev/null; then :; elif [ ! -d "$root_base" ] || [ -L "$root_base" ]; then echo "ERROR: cannot create fallback parent $root_base" >&2; exit 1; fi
+    [ -O "$root_base" ] || { echo "ERROR: fallback parent $root_base not owned by effective user; refusing" >&2; exit 1; }
+    [ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base changed under us; refusing" >&2; exit 1; }
+    chmod 700 "$root_base" || { echo "ERROR: cannot secure fallback parent $root_base" >&2; exit 1; }
+    [ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base changed under us; refusing" >&2; exit 1; }
+  fi
+  [ ! -L "$root_base/.agent-tmp" ] || { echo "ERROR: run root $root_base/.agent-tmp is a symlink; refusing" >&2; exit 1; }
+  run_root="$root_base/.agent-tmp"
+  if mkdir -m 700 "$run_root" 2>/dev/null; then :; elif [ ! -d "$run_root" ] || [ -L "$run_root" ]; then echo "ERROR: cannot create run root $run_root" >&2; exit 1; fi
+  [ -O "$run_root" ] || { echo "ERROR: run root $run_root not owned by effective user; refusing" >&2; exit 1; }
+  [ ! -L "$run_root" ] || { echo "ERROR: run root $run_root changed under us; refusing" >&2; exit 1; }
+  chmod 700 "$run_root" || { echo "ERROR: cannot chmod run root $run_root" >&2; exit 1; }
+  [ ! -L "$run_root" ] || { echo "ERROR: run root $run_root changed under us; refusing" >&2; exit 1; }
+  if [ -z "$fallback" ] && git rev-parse --git-dir >/dev/null 2>&1; then
+    exclude="$(git rev-parse --git-path info/exclude 2>/dev/null)" && [ -n "$exclude" ] || { echo "ERROR: cannot locate git exclude file" >&2; exit 1; }
+    mkdir -p "$(dirname "$exclude")" || { echo "ERROR: cannot write $(dirname "$exclude")" >&2; exit 1; }
+    grep -qxF '/.agent-tmp/' "$exclude" 2>/dev/null || echo '/.agent-tmp/' >> "$exclude" || { echo "ERROR: cannot update $exclude" >&2; exit 1; }
+  fi
+  rootcanon="$(realpath "$run_root" 2>/dev/null || readlink -f "$run_root" 2>/dev/null || (cd "$run_root" 2>/dev/null && pwd -P))" && [ -n "$rootcanon" ] || { echo "ERROR: cannot resolve run root $run_root" >&2; exit 1; }
+  if [ -n "${BASH_VERSION:-}${ZSH_VERSION:-}" ]; then
+  find "$rootcanon" -maxdepth 1 -name 'agent-review-report*' ! \( -name 'agent-review-report-rounds' -type d \) -mtime +7 -print0 | while IFS= read -r -d '' p; do if [ -d "$p" ]; then reap_err="$(mktemp "$rootcanon/agent-review-report-reap-err.XXXXXX")" || { echo "WARNING: cannot vet stale entry for reaping (mktemp failed); skipping" >&2; continue; }; if ! fresh="$(find "$p" -type f ! -mtime +7 -print -quit 2>"$reap_err")"; then rm -f "$reap_err"; continue; fi; if [ -n "$fresh" ] || [ -s "$reap_err" ]; then rm -f "$reap_err"; continue; fi; rm -f "$reap_err"; fi; rm -rf "$p" && echo "reaping stale run path: $p" >&2 || echo "ERROR: failed to reap stale run path: $p" >&2; done
+  if [ -d "$rootcanon/agent-review-report-rounds" ]; then find "$rootcanon/agent-review-report-rounds" -mindepth 1 -maxdepth 1 -name 'agent-review-report.*' -mtime +7 -print0 | while IFS= read -r -d '' p; do if [ -d "$p" ]; then reap_err="$(mktemp "$rootcanon/agent-review-report-reap-err.XXXXXX")" || { echo "WARNING: cannot vet stale entry for reaping (mktemp failed); skipping" >&2; continue; }; if ! fresh="$(find "$p" -type f ! -mtime +7 -print -quit 2>"$reap_err")"; then rm -f "$reap_err"; continue; fi; if [ -n "$fresh" ] || [ -s "$reap_err" ]; then rm -f "$reap_err"; continue; fi; rm -f "$reap_err"; fi; rm -rf "$p" && echo "reaping stale run archive: $p" >&2 || echo "ERROR: failed to reap stale run archive: $p" >&2; done; fi
+  else echo "WARNING: skipping 7-day reaping: requires bash or zsh; stale entries accumulate until one bootstrap runs under bash/zsh" >&2; fi
+  # Mirror end (section 13 end anchor).
+  echo "toplevel=${toplevel:-}"
+  diff_file="$(mktemp "$run_root/agent-review-report-diff.XXXXXX")" || { echo "ERROR: failed to create diff scratch file under $run_root; check permissions and disk space" >&2; exit 1; }
+  git --no-pager diff --no-ext-diff "${diff_target}" -- \
     ':!**/*.lock' ':!**/Cargo.lock' ':!**/package-lock.json' ':!**/pnpm-lock.yaml' ':!**/uv.lock' \
     ':!**/target/**' ':!**/dist/**' ':!**/build/**' ':!**/node_modules/**' \
     ':!**/*.onnx*' ':!**/*.gguf' ':!**/*.wasm' ':!**/*.dylib' ':!**/*.so' ':!**/*.dll' \
-    ':!**/generated/**' ':!devlog/**' ':!docs/**' > "$diff_file"
+    ':!**/generated/**' ':!devlog/**' ':!docs/**' ':!.agent-tmp/**' > "$diff_file" || { echo "ERROR: git diff failed for ${diff_target}; aborting, diff not extracted" >&2; rm -f "${diff_file:?}"; exit 1; }
+  [ -s "$diff_file" ] || { echo "ERROR: empty diff for ${diff_target}; aborting rather than reviewing nothing" >&2; rm -f "${diff_file:?}"; exit 1; }
   ```
+  The scratch file carries no EXIT trap by design (mktemp 600 plus 700
+  parents plus the 7-day reaper bound a mid-run-failure leak to disk
+  noise; the handled failure arms above remove their own scratch).
 - **PR number or URL**: review that PR's diff. `gh` and `jq` must be on
   `PATH`. When they are installed but not found (for example a macOS
   Homebrew install outside the inherited `PATH`), prefix the commands
   below with `export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"`
   (Apple Silicon, then Intel Mac; Linuxbrew users add
   `$(brew --prefix)/bin` instead). Resolve the input to a canonical
-  numeric PR ID, record the head SHA the review covers, and fetch the
+  numeric PR ID (paste the input inside the single quotes; escape an embedded single quote as `'\''`), record the head SHA the review covers, and fetch the
   diff with:
   ```bash
-  pr_number="$(gh pr view "$pr_input" --json number --jq .number)" || { echo "ERROR: gh pr view failed for $pr_input; check PR number or URL" >&2; exit 1; }
-  [[ "$pr_number" =~ ^[0-9]+$ ]] || { echo "ERROR: resolved PR number is non-numeric: $pr_number" >&2; exit 1; }
-  diff_file="$(mktemp "${TMPDIR:-/tmp}/agent-review-report-diff.XXXXXX")"
+  unset GIT_DIR GIT_WORK_TREE GIT_EXTERNAL_DIFF GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
+  cfg_n="${GIT_CONFIG_COUNT:-0}"; unset GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS; cfg_i=0; while [ "$cfg_i" -lt "$cfg_n" ] 2>/dev/null && [ "$cfg_i" -lt 128 ]; do unset "GIT_CONFIG_KEY_$cfg_i" "GIT_CONFIG_VALUE_$cfg_i"; cfg_i=$((cfg_i+1)); done; unset cfg_n cfg_i
+  pr_number="$(gh pr view '<pr_input>' --json number --jq .number)" || { echo "ERROR: gh pr view failed; check PR number or URL" >&2; exit 1; }
+  case "$pr_number" in ""|*[!0-9]*) echo "ERROR: resolved PR number is non-numeric: $pr_number" >&2; exit 1;; esac
+  # Mirror: 7 run-root bootstraps stay identical (modulo indentation, reaper pattern).
+  unset GIT_DIR GIT_WORK_TREE GIT_EXTERNAL_DIFF GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
+  cfg_n="${GIT_CONFIG_COUNT:-0}"; unset GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS; cfg_i=0; while [ "$cfg_i" -lt "$cfg_n" ] 2>/dev/null && [ "$cfg_i" -lt 128 ]; do unset "GIT_CONFIG_KEY_$cfg_i" "GIT_CONFIG_VALUE_$cfg_i"; cfg_i=$((cfg_i+1)); done; unset cfg_n cfg_i
+  tmpbase="$(cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)" || tmpbase=""; [ "$tmpbase" = "/" ] || tmpbase="${tmpbase%/}"
+  if toplevel="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -w "$toplevel" ] && [ -O "$toplevel" ]; then
+    root_base="$toplevel"; fallback=""
+  else
+    if [ -n "${toplevel:-}" ]; then echo "notice: toplevel ${toplevel:-} unusable (unwritable or foreign-owned); using per-user TMPDIR fallback" >&2; fi
+    toplevel=""
+    case "${TMPDIR:-/tmp}" in /*) :;; *) echo "ERROR: TMPDIR ${TMPDIR:-/tmp} is not absolute; refusing" >&2; exit 1;; esac
+    [ -n "$tmpbase" ] || { echo "ERROR: cannot resolve TMPDIR ${TMPDIR:-/tmp}" >&2; exit 1; }
+    [ "${#tmpbase}" -lt 800 ] || { echo "ERROR: TMPDIR ${TMPDIR:-/tmp} resolves to a ${#tmpbase}-character path; shorten TMPDIR or unset it" >&2; exit 1; }
+    root_base="$tmpbase/agent-tmp-$(id -un 2>/dev/null || id -u 2>/dev/null || echo "uid${UID:-unknown}")"; fallback=1  # TMPDIR fallback: skips git exclude, OS may reap
+    [ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base is a symlink; refusing" >&2; exit 1; }
+    if mkdir -m 700 "$root_base" 2>/dev/null; then :; elif [ ! -d "$root_base" ] || [ -L "$root_base" ]; then echo "ERROR: cannot create fallback parent $root_base" >&2; exit 1; fi
+    [ -O "$root_base" ] || { echo "ERROR: fallback parent $root_base not owned by effective user; refusing" >&2; exit 1; }
+    [ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base changed under us; refusing" >&2; exit 1; }
+    chmod 700 "$root_base" || { echo "ERROR: cannot secure fallback parent $root_base" >&2; exit 1; }
+    [ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base changed under us; refusing" >&2; exit 1; }
+  fi
+  if [ -z "$fallback" ] && [ -e "$root_base/.agent-tmp" ] && [ ! -O "$root_base/.agent-tmp" ]; then
+    root_base_safe="$(printf '%s' "$root_base/.agent-tmp" | sed "s/'/'\\\\''/g")"
+    echo "notice: $root_base/.agent-tmp not owned by effective user (sudo residue?); using per-user fallback (before restoring repo-local runs, check for live runs with: ls '$root_base_safe'; coordinate with the owning user, then run: sudo rm -rf '$root_base_safe')" >&2
+    toplevel=""
+    case "${TMPDIR:-/tmp}" in /*) :;; *) echo "ERROR: TMPDIR ${TMPDIR:-/tmp} is not absolute; refusing" >&2; exit 1;; esac
+    [ -n "$tmpbase" ] || { echo "ERROR: cannot resolve TMPDIR ${TMPDIR:-/tmp}" >&2; exit 1; }
+    [ "${#tmpbase}" -lt 800 ] || { echo "ERROR: TMPDIR ${TMPDIR:-/tmp} resolves to a ${#tmpbase}-character path; shorten TMPDIR or unset it" >&2; exit 1; }
+    root_base="$tmpbase/agent-tmp-$(id -un 2>/dev/null || id -u 2>/dev/null || echo "uid${UID:-unknown}")"; fallback=1
+    [ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base is a symlink; refusing" >&2; exit 1; }
+    if mkdir -m 700 "$root_base" 2>/dev/null; then :; elif [ ! -d "$root_base" ] || [ -L "$root_base" ]; then echo "ERROR: cannot create fallback parent $root_base" >&2; exit 1; fi
+    [ -O "$root_base" ] || { echo "ERROR: fallback parent $root_base not owned by effective user; refusing" >&2; exit 1; }
+    [ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base changed under us; refusing" >&2; exit 1; }
+    chmod 700 "$root_base" || { echo "ERROR: cannot secure fallback parent $root_base" >&2; exit 1; }
+    [ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base changed under us; refusing" >&2; exit 1; }
+  fi
+  [ ! -L "$root_base/.agent-tmp" ] || { echo "ERROR: run root $root_base/.agent-tmp is a symlink; refusing" >&2; exit 1; }
+  run_root="$root_base/.agent-tmp"
+  if mkdir -m 700 "$run_root" 2>/dev/null; then :; elif [ ! -d "$run_root" ] || [ -L "$run_root" ]; then echo "ERROR: cannot create run root $run_root" >&2; exit 1; fi
+  [ -O "$run_root" ] || { echo "ERROR: run root $run_root not owned by effective user; refusing" >&2; exit 1; }
+  [ ! -L "$run_root" ] || { echo "ERROR: run root $run_root changed under us; refusing" >&2; exit 1; }
+  chmod 700 "$run_root" || { echo "ERROR: cannot chmod run root $run_root" >&2; exit 1; }
+  [ ! -L "$run_root" ] || { echo "ERROR: run root $run_root changed under us; refusing" >&2; exit 1; }
+  if [ -z "$fallback" ] && git rev-parse --git-dir >/dev/null 2>&1; then
+    exclude="$(git rev-parse --git-path info/exclude 2>/dev/null)" && [ -n "$exclude" ] || { echo "ERROR: cannot locate git exclude file" >&2; exit 1; }
+    mkdir -p "$(dirname "$exclude")" || { echo "ERROR: cannot write $(dirname "$exclude")" >&2; exit 1; }
+    grep -qxF '/.agent-tmp/' "$exclude" 2>/dev/null || echo '/.agent-tmp/' >> "$exclude" || { echo "ERROR: cannot update $exclude" >&2; exit 1; }
+  fi
+  rootcanon="$(realpath "$run_root" 2>/dev/null || readlink -f "$run_root" 2>/dev/null || (cd "$run_root" 2>/dev/null && pwd -P))" && [ -n "$rootcanon" ] || { echo "ERROR: cannot resolve run root $run_root" >&2; exit 1; }
+  if [ -n "${BASH_VERSION:-}${ZSH_VERSION:-}" ]; then
+  find "$rootcanon" -maxdepth 1 -name 'agent-review-report*' ! \( -name 'agent-review-report-rounds' -type d \) -mtime +7 -print0 | while IFS= read -r -d '' p; do if [ -d "$p" ]; then reap_err="$(mktemp "$rootcanon/agent-review-report-reap-err.XXXXXX")" || { echo "WARNING: cannot vet stale entry for reaping (mktemp failed); skipping" >&2; continue; }; if ! fresh="$(find "$p" -type f ! -mtime +7 -print -quit 2>"$reap_err")"; then rm -f "$reap_err"; continue; fi; if [ -n "$fresh" ] || [ -s "$reap_err" ]; then rm -f "$reap_err"; continue; fi; rm -f "$reap_err"; fi; rm -rf "$p" && echo "reaping stale run path: $p" >&2 || echo "ERROR: failed to reap stale run path: $p" >&2; done
+  if [ -d "$rootcanon/agent-review-report-rounds" ]; then find "$rootcanon/agent-review-report-rounds" -mindepth 1 -maxdepth 1 -name 'agent-review-report.*' -mtime +7 -print0 | while IFS= read -r -d '' p; do if [ -d "$p" ]; then reap_err="$(mktemp "$rootcanon/agent-review-report-reap-err.XXXXXX")" || { echo "WARNING: cannot vet stale entry for reaping (mktemp failed); skipping" >&2; continue; }; if ! fresh="$(find "$p" -type f ! -mtime +7 -print -quit 2>"$reap_err")"; then rm -f "$reap_err"; continue; fi; if [ -n "$fresh" ] || [ -s "$reap_err" ]; then rm -f "$reap_err"; continue; fi; rm -f "$reap_err"; fi; rm -rf "$p" && echo "reaping stale run archive: $p" >&2 || echo "ERROR: failed to reap stale run archive: $p" >&2; done; fi
+  else echo "WARNING: skipping 7-day reaping: requires bash or zsh; stale entries accumulate until one bootstrap runs under bash/zsh" >&2; fi
+  # Mirror end (section 13 end anchor).
+  echo "toplevel=${toplevel:-}"
+  diff_file="$(mktemp "$run_root/agent-review-report-diff.XXXXXX")" || { echo "ERROR: failed to create diff scratch file under $run_root; check permissions and disk space" >&2; exit 1; }
   sha_before=$(gh pr view "$pr_number" --json headRefOid --jq .headRefOid) || { echo "ERROR: gh pr view failed for PR $pr_number; aborting, head SHA unknown" >&2; rm -f "${diff_file:?}"; exit 1; }
   [ -n "$sha_before" ] && [ "$sha_before" != "null" ] || { echo "ERROR: head SHA missing for PR $pr_number; aborting" >&2; rm -f "${diff_file:?}"; exit 1; }
   gh pr diff "$pr_number" > "$diff_file" || { echo "ERROR: gh pr diff failed for PR $pr_number; aborting, diff not fetched" >&2; rm -f "${diff_file:?}"; exit 1; }
   [ -s "$diff_file" ] || { echo "ERROR: empty diff for PR $pr_number; aborting rather than reviewing nothing" >&2; rm -f "${diff_file:?}"; exit 1; }
   sha_after=$(gh pr view "$pr_number" --json headRefOid --jq .headRefOid) || { echo "ERROR: gh pr view failed for PR $pr_number; aborting, head SHA unknown" >&2; rm -f "${diff_file:?}"; exit 1; }
   ```
+  The scratch file carries no EXIT trap by design (mktemp 600 plus 700
+  parents plus the 7-day reaper bound a mid-run-failure leak to disk
+  noise; the handled failure arms above remove their own scratch).
   When `sha_before` and `sha_after` differ, a push landed mid-fetch:
   refetch once more (at most 3 attempts total, then report the drift
   and stop). Record the SHA that matches the kept diff. Abort the run
@@ -87,7 +213,7 @@ The skill takes an optional target argument:
   over a diff that was never fetched.
 
 Save the filtered diff to a uniquely named scratch file under
-`${TMPDIR:-/tmp}` (for example via `mktemp`) so concurrent runs never
+`$run_root` (for example via `mktemp`) so concurrent runs never
 share it and reviewers can inspect it without context truncation. Clean up the
 scratch diff file when the report finishes (deleted in section 8 with the guarded cleanup). For a
 PR target, apply the same exclusions by path when reading the fetched
@@ -248,10 +374,114 @@ Every reviewer prompt must include:
   greps) to locate them; scope every search to the repository or worktree.
   An unbounded scan parks the reviewer behind a result it never needs and
   stalls the whole round.
-- A progress heartbeat: once per report run, before the first spawn,
-  create one run-unique progress directory with `progress_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-review-report.XXXXXX")"`
-  (one directory per report run, so concurrent runs never share it) and
-  print its path. Before the round's spawn, create one fresh empty
+- A progress heartbeat: once per report run, before the first spawn, set
+  up the repo-local run root (scratch lives in the repo so agents never
+  need approval for out-of-workspace temp paths, and so no OS reaper
+  deletes mid-run state; outside a git checkout, or when the checkout
+  is not writable, it falls back to a per-user dir under
+  `${TMPDIR:-/tmp}` where OS-reaper immunity does not apply):
+  Run the fenced setup below in ONE bash invocation: a fresh shell
+  loses `$run_root` and `$rootcanon`.
+  (one `.agent-tmp` directory per repo, excluded from git locally so it
+  never pollutes the reviewed diff; a duplicate exclude line under
+  racing bootstraps is harmless since git treats repeats as one rule;
+  a stale `/.agent-tmp/` line under `.git/worktrees/<id>/info/exclude`
+  is dead weight git never consults, so never "fix" that file;
+  the `find` lines reap only this skill's own run paths older than 7
+  days with no fresh contents, printing each to stderr (top-level entries plus
+  per-run archive dirs, each on its own freshness), and are the one
+  sanctioned `rm -rf`: never generalize them; the fence then creates one
+  run-unique progress directory (one per report run, so concurrent runs
+  never share it, and with no EXIT trap by design: mktemp 600 plus 700
+  parents plus the 7-day reaper bound a mid-run-failure leak to disk
+  noise), records it with `progress_dir=` plus `toplevel=` echoes
+  (`toplevel` empty in TMPDIR-fallback mode), asserts the toplevel
+  matches the section-1 value (paste the path inside the single quotes; escape an embedded single quote as `'\''`), creates this run's rounds archive
+  (the presented report lands here and survives the run; the reaper ages each
+  run's archive out 7 days after its last fresh content; a rounds
+  failure removes the just-allocated progress dir since no trap spans
+  shells), and records it with a `rounds_dir=` echo):
+  ```bash
+  # FRESH RUN ONLY: never re-run this fence to re-attach to a run; re-running mints a second progress dir and orphans the first. Re-attach with the section-5 Persist re-derive recipe instead.
+  unset GIT_DIR GIT_WORK_TREE GIT_EXTERNAL_DIFF GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
+  cfg_n="${GIT_CONFIG_COUNT:-0}"; unset GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS; cfg_i=0; while [ "$cfg_i" -lt "$cfg_n" ] 2>/dev/null && [ "$cfg_i" -lt 128 ]; do unset "GIT_CONFIG_KEY_$cfg_i" "GIT_CONFIG_VALUE_$cfg_i"; cfg_i=$((cfg_i+1)); done; unset cfg_n cfg_i
+  # Precheck: refuse drift before the mirror allocates anything in this repo.
+  # The record is pasted once; compares and diagnostics reference the var so a
+  # hostile value (quote, dollar, backtick) never re-parses in an echo string.
+  _record='<toplevel-from-section-1>'
+  # Derive the effective toplevel exactly like the mirror: an unusable root
+  # (unwritable, foreign-owned, or sudo-residue .agent-tmp) falls back to empty.
+  _pre="$(git rev-parse --show-toplevel 2>/dev/null)" || _pre=""
+  if [ -n "$_pre" ] && { [ ! -w "$_pre" ] || [ ! -O "$_pre" ] || { [ -e "$_pre/.agent-tmp" ] && [ ! -O "$_pre/.agent-tmp" ]; }; }; then _pre=""; fi
+  [ "$_pre" = "$_record" ] || { echo "ERROR: toplevel drift: heartbeat is not the section-1 toplevel (live '$_pre' vs recorded '$_record'); cd there and re-run" >&2; exit 1; }
+  # Mirror: 7 run-root bootstraps stay identical (modulo indentation, reaper pattern).
+  unset GIT_DIR GIT_WORK_TREE GIT_EXTERNAL_DIFF GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
+  cfg_n="${GIT_CONFIG_COUNT:-0}"; unset GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS; cfg_i=0; while [ "$cfg_i" -lt "$cfg_n" ] 2>/dev/null && [ "$cfg_i" -lt 128 ]; do unset "GIT_CONFIG_KEY_$cfg_i" "GIT_CONFIG_VALUE_$cfg_i"; cfg_i=$((cfg_i+1)); done; unset cfg_n cfg_i
+  tmpbase="$(cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)" || tmpbase=""; [ "$tmpbase" = "/" ] || tmpbase="${tmpbase%/}"
+  if toplevel="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -w "$toplevel" ] && [ -O "$toplevel" ]; then
+    root_base="$toplevel"; fallback=""
+  else
+    if [ -n "${toplevel:-}" ]; then echo "notice: toplevel ${toplevel:-} unusable (unwritable or foreign-owned); using per-user TMPDIR fallback" >&2; fi
+    toplevel=""
+    case "${TMPDIR:-/tmp}" in /*) :;; *) echo "ERROR: TMPDIR ${TMPDIR:-/tmp} is not absolute; refusing" >&2; exit 1;; esac
+    [ -n "$tmpbase" ] || { echo "ERROR: cannot resolve TMPDIR ${TMPDIR:-/tmp}" >&2; exit 1; }
+    [ "${#tmpbase}" -lt 800 ] || { echo "ERROR: TMPDIR ${TMPDIR:-/tmp} resolves to a ${#tmpbase}-character path; shorten TMPDIR or unset it" >&2; exit 1; }
+    root_base="$tmpbase/agent-tmp-$(id -un 2>/dev/null || id -u 2>/dev/null || echo "uid${UID:-unknown}")"; fallback=1  # TMPDIR fallback: skips git exclude, OS may reap
+    [ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base is a symlink; refusing" >&2; exit 1; }
+    if mkdir -m 700 "$root_base" 2>/dev/null; then :; elif [ ! -d "$root_base" ] || [ -L "$root_base" ]; then echo "ERROR: cannot create fallback parent $root_base" >&2; exit 1; fi
+    [ -O "$root_base" ] || { echo "ERROR: fallback parent $root_base not owned by effective user; refusing" >&2; exit 1; }
+    [ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base changed under us; refusing" >&2; exit 1; }
+    chmod 700 "$root_base" || { echo "ERROR: cannot secure fallback parent $root_base" >&2; exit 1; }
+    [ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base changed under us; refusing" >&2; exit 1; }
+  fi
+  if [ -z "$fallback" ] && [ -e "$root_base/.agent-tmp" ] && [ ! -O "$root_base/.agent-tmp" ]; then
+    root_base_safe="$(printf '%s' "$root_base/.agent-tmp" | sed "s/'/'\\\\''/g")"
+    echo "notice: $root_base/.agent-tmp not owned by effective user (sudo residue?); using per-user fallback (before restoring repo-local runs, check for live runs with: ls '$root_base_safe'; coordinate with the owning user, then run: sudo rm -rf '$root_base_safe')" >&2
+    toplevel=""
+    case "${TMPDIR:-/tmp}" in /*) :;; *) echo "ERROR: TMPDIR ${TMPDIR:-/tmp} is not absolute; refusing" >&2; exit 1;; esac
+    [ -n "$tmpbase" ] || { echo "ERROR: cannot resolve TMPDIR ${TMPDIR:-/tmp}" >&2; exit 1; }
+    [ "${#tmpbase}" -lt 800 ] || { echo "ERROR: TMPDIR ${TMPDIR:-/tmp} resolves to a ${#tmpbase}-character path; shorten TMPDIR or unset it" >&2; exit 1; }
+    root_base="$tmpbase/agent-tmp-$(id -un 2>/dev/null || id -u 2>/dev/null || echo "uid${UID:-unknown}")"; fallback=1
+    [ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base is a symlink; refusing" >&2; exit 1; }
+    if mkdir -m 700 "$root_base" 2>/dev/null; then :; elif [ ! -d "$root_base" ] || [ -L "$root_base" ]; then echo "ERROR: cannot create fallback parent $root_base" >&2; exit 1; fi
+    [ -O "$root_base" ] || { echo "ERROR: fallback parent $root_base not owned by effective user; refusing" >&2; exit 1; }
+    [ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base changed under us; refusing" >&2; exit 1; }
+    chmod 700 "$root_base" || { echo "ERROR: cannot secure fallback parent $root_base" >&2; exit 1; }
+    [ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base changed under us; refusing" >&2; exit 1; }
+  fi
+  [ ! -L "$root_base/.agent-tmp" ] || { echo "ERROR: run root $root_base/.agent-tmp is a symlink; refusing" >&2; exit 1; }
+  run_root="$root_base/.agent-tmp"
+  if mkdir -m 700 "$run_root" 2>/dev/null; then :; elif [ ! -d "$run_root" ] || [ -L "$run_root" ]; then echo "ERROR: cannot create run root $run_root" >&2; exit 1; fi
+  [ -O "$run_root" ] || { echo "ERROR: run root $run_root not owned by effective user; refusing" >&2; exit 1; }
+  [ ! -L "$run_root" ] || { echo "ERROR: run root $run_root changed under us; refusing" >&2; exit 1; }
+  chmod 700 "$run_root" || { echo "ERROR: cannot chmod run root $run_root" >&2; exit 1; }
+  [ ! -L "$run_root" ] || { echo "ERROR: run root $run_root changed under us; refusing" >&2; exit 1; }
+  if [ -z "$fallback" ] && git rev-parse --git-dir >/dev/null 2>&1; then
+    exclude="$(git rev-parse --git-path info/exclude 2>/dev/null)" && [ -n "$exclude" ] || { echo "ERROR: cannot locate git exclude file" >&2; exit 1; }
+    mkdir -p "$(dirname "$exclude")" || { echo "ERROR: cannot write $(dirname "$exclude")" >&2; exit 1; }
+    grep -qxF '/.agent-tmp/' "$exclude" 2>/dev/null || echo '/.agent-tmp/' >> "$exclude" || { echo "ERROR: cannot update $exclude" >&2; exit 1; }
+  fi
+  rootcanon="$(realpath "$run_root" 2>/dev/null || readlink -f "$run_root" 2>/dev/null || (cd "$run_root" 2>/dev/null && pwd -P))" && [ -n "$rootcanon" ] || { echo "ERROR: cannot resolve run root $run_root" >&2; exit 1; }
+  if [ -n "${BASH_VERSION:-}${ZSH_VERSION:-}" ]; then
+  find "$rootcanon" -maxdepth 1 -name 'agent-review-report*' ! \( -name 'agent-review-report-rounds' -type d \) -mtime +7 -print0 | while IFS= read -r -d '' p; do if [ -d "$p" ]; then reap_err="$(mktemp "$rootcanon/agent-review-report-reap-err.XXXXXX")" || { echo "WARNING: cannot vet stale entry for reaping (mktemp failed); skipping" >&2; continue; }; if ! fresh="$(find "$p" -type f ! -mtime +7 -print -quit 2>"$reap_err")"; then rm -f "$reap_err"; continue; fi; if [ -n "$fresh" ] || [ -s "$reap_err" ]; then rm -f "$reap_err"; continue; fi; rm -f "$reap_err"; fi; rm -rf "$p" && echo "reaping stale run path: $p" >&2 || echo "ERROR: failed to reap stale run path: $p" >&2; done
+  if [ -d "$rootcanon/agent-review-report-rounds" ]; then find "$rootcanon/agent-review-report-rounds" -mindepth 1 -maxdepth 1 -name 'agent-review-report.*' -mtime +7 -print0 | while IFS= read -r -d '' p; do if [ -d "$p" ]; then reap_err="$(mktemp "$rootcanon/agent-review-report-reap-err.XXXXXX")" || { echo "WARNING: cannot vet stale entry for reaping (mktemp failed); skipping" >&2; continue; }; if ! fresh="$(find "$p" -type f ! -mtime +7 -print -quit 2>"$reap_err")"; then rm -f "$reap_err"; continue; fi; if [ -n "$fresh" ] || [ -s "$reap_err" ]; then rm -f "$reap_err"; continue; fi; rm -f "$reap_err"; fi; rm -rf "$p" && echo "reaping stale run archive: $p" >&2 || echo "ERROR: failed to reap stale run archive: $p" >&2; done; fi
+  else echo "WARNING: skipping 7-day reaping: requires bash or zsh; stale entries accumulate until one bootstrap runs under bash/zsh" >&2; fi
+  # Mirror end (section 13 end anchor).
+  [ "${toplevel:-}" = "$_record" ] || { echo "ERROR: toplevel drift: heartbeat ${toplevel:-unset} != section-1 '$_record'; cd to the section-1 toplevel and re-run" >&2; exit 1; }
+  progress_dir="$(mktemp -d "${run_root:?}/agent-review-report.XXXXXX")" || { echo "ERROR: failed to create progress directory under $run_root; check permissions and disk space" >&2; exit 1; }
+  echo "progress_dir=$progress_dir"
+  echo "toplevel=${toplevel:-}"
+  [ ! -L "${run_root:?}/agent-review-report-rounds" ] || { echo "ERROR: rounds parent $run_root/agent-review-report-rounds is a symlink; refusing" >&2; rm -rf "${progress_dir:?}"; exit 1; }
+  mkdir -m 700 "${run_root:?}/agent-review-report-rounds" 2>/dev/null || [ -d "${run_root:?}/agent-review-report-rounds" ] || { echo "ERROR: failed to create rounds parent $run_root/agent-review-report-rounds" >&2; rm -rf "${progress_dir:?}"; exit 1; }
+  [ ! -L "${run_root:?}/agent-review-report-rounds" ] || { echo "ERROR: rounds parent ${run_root:?}/agent-review-report-rounds changed under us; refusing" >&2; rm -rf "${progress_dir:?}"; exit 1; }
+  [ -O "${run_root:?}/agent-review-report-rounds" ] || { echo "ERROR: rounds parent ${run_root:?}/agent-review-report-rounds not owned by effective user; refusing" >&2; rm -rf "${progress_dir:?}"; exit 1; }
+  rounds_dir="${run_root:?}/agent-review-report-rounds/$(basename "$progress_dir")" && mkdir -m 700 "$rounds_dir" || { echo "ERROR: failed to create rounds archive $rounds_dir (a non-directory entry may block the rounds parent)" >&2; rm -rf "${progress_dir:?}"; exit 1; }
+  [ ! -L "${run_root:?}/agent-review-report-rounds" ] || { echo "ERROR: rounds parent ${run_root:?}/agent-review-report-rounds changed under us; refusing" >&2; rm -rf "${progress_dir:?}"; exit 1; }
+  chmod 700 "${run_root:?}/agent-review-report-rounds" || { echo "ERROR: cannot chmod rounds parent $run_root/agent-review-report-rounds" >&2; rm -rf "${rounds_dir:?}" "${progress_dir:?}"; exit 1; }
+  [ ! -L "${run_root:?}/agent-review-report-rounds" ] || { echo "ERROR: rounds parent ${run_root:?}/agent-review-report-rounds changed under us; refusing" >&2; rm -rf "${progress_dir:?}"; exit 1; }
+  echo "rounds_dir=$rounds_dir"
+  ```
+Before the round's spawn, create one fresh empty
   progress file per reviewer
   (`<progress_dir>/<lens>.progress`, where `<lens>` is the
   reviewer number, for example `reviewer1`, bound to `path` before the
@@ -283,15 +513,17 @@ Every reviewer prompt must include:
   the command name); never paste unredacted credentials into them. These files
   drive the stall rule above and let the human watch the round with
   `tail -f "$progress_dir"/*.progress`. Never delete a path that
-  is not inside `${TMPDIR:-/tmp}` under an `agent-review-report.`,
+  is not inside the run root under an `agent-review-report.`,
   `agent-review-report-diff.`, or `agent-review-report-comment.` prefix
-  (canonicalized, symlinks resolved); refuse and report instead. Spell
-  the check once: `tmpcanon=$(realpath "${TMPDIR:-/tmp}" 2>/dev/null ||
-  readlink -f "${TMPDIR:-/tmp}")` and `real=$(realpath "$path"
-  2>/dev/null || readlink -f "$path")`, then require `$real` to start
-  with `$tmpcanon/agent-review-report.`,
-  `$tmpcanon/agent-review-report-diff.`, or
-  `$tmpcanon/agent-review-report-comment.`.
+  (symlinks resolved); refuse and report instead. Spell
+  the check once, re-deriving every variable so the check works in a
+  fresh shell: re-run the run-root bootstrap above (it is idempotent; the FRESH RUN ONLY guard marks fences that must not be re-run whole),
+  then `real=$(realpath "$path"
+  2>/dev/null || readlink -f "$path" 2>/dev/null)`, then require `$real`
+  to start with `$rootcanon/agent-review-report.`,
+  `$rootcanon/agent-review-report-diff.`, or
+  `$rootcanon/agent-review-report-comment.` (an empty `$real` refuses
+  everything).
 - The finding format: `SEVERITY | file_path:line_number | one-line
   description | why it matters`, with `SEVERITY` in `bug`, `correctness`,
   `convention`, `quality`, or `nitpick`. Every non-nitpick needs a hazard
@@ -339,6 +571,32 @@ findings:
   want next (`agent-review-loop` to fix the diff in a loop,
   `agent-review-pr-comments` once PR feedback lands). Suggest only; never
   invoke another skill unasked.
+5. **Persist**: write the presented report to
+  `$rounds_dir/report.md` (created by the heartbeat setup alongside
+  `$progress_dir`; secrets redacted per invariant 5). If `$rounds_dir`
+  is unset (fresh shell), re-derive it: first
+  `cd '<recorded toplevel>' || { echo "ERROR: cannot cd to recorded toplevel; re-run setup for a new archive or stop" >&2; exit 1; }` (paste the path inside the single quotes; escape an embedded single quote as `'\''`)
+  with the `toplevel=` path echoed at setup when it is non-empty (a
+  drifted cwd re-attaches to the wrong repo; in fallback mode the echo
+  is empty and there is nothing to `cd` to), then re-run the run-root
+  bootstrap above (it is idempotent; the FRESH RUN ONLY guard marks fences that must not be re-run whole), then re-attach to this run's
+  archive by run
+  id: take the trailing component (basename) of the `rounds_dir=` path
+  echoed at setup as <run-id>, or, when `$progress_dir` is still set,
+  `$(basename "$progress_dir")`, and recompute
+  `rounds_dir="$run_root/agent-review-report-rounds/<run-id>"`. Enforce
+  immediately: `[ -n "$rounds_dir" ] && [ -d "$rounds_dir" ] || { echo
+  "ERROR: cannot re-attach rounds archive (rounds_dir='$rounds_dir'
+  run_root='$run_root'); re-run setup for a new archive or stop" >&2;
+  exit 1; }`. With no id record there is no safe fallback (this
+  single-shot archive holds only the end-of-run report, so no contents
+  exist to match): stop and report that setup must be re-run instead of
+  writing into a sibling run's archive. After writing, verify with `[
+  -s "$rounds_dir/report.md" ] || { echo "ERROR: persist verification
+  failed for $rounds_dir/report.md" >&2; exit 1; }`; a failed write
+  blocks finishing like a missing one. Chat reports do not survive
+  context compaction, so the write is mandatory: never finish with the
+  report only in chat.
 
 ## 6. Optional PR Posting (PR Targets Only)
 
@@ -352,13 +610,72 @@ On explicit approval:
 1. Render the presented report as one consolidated Markdown comment (same
    scope header and findings, no new claims beyond what was presented).
 2. Write the body to a uniquely named scratch file and post it with an
-   explicit target:
+   explicit target (section 6 may run in a fresh shell without section
+   1's variables, so it re-runs the run-root bootstrap below, which is
+   idempotent and self-sufficient):
    ```bash
-   comment_file="$(mktemp "${TMPDIR:-/tmp}/agent-review-report-comment.XXXXXX")"
+   # Mirror: 7 run-root bootstraps stay identical (modulo indentation, reaper pattern).
+   unset GIT_DIR GIT_WORK_TREE GIT_EXTERNAL_DIFF GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
+   cfg_n="${GIT_CONFIG_COUNT:-0}"; unset GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS; cfg_i=0; while [ "$cfg_i" -lt "$cfg_n" ] 2>/dev/null && [ "$cfg_i" -lt 128 ]; do unset "GIT_CONFIG_KEY_$cfg_i" "GIT_CONFIG_VALUE_$cfg_i"; cfg_i=$((cfg_i+1)); done; unset cfg_n cfg_i
+   tmpbase="$(cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)" || tmpbase=""; [ "$tmpbase" = "/" ] || tmpbase="${tmpbase%/}"
+   if toplevel="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -w "$toplevel" ] && [ -O "$toplevel" ]; then
+     root_base="$toplevel"; fallback=""
+   else
+     if [ -n "${toplevel:-}" ]; then echo "notice: toplevel ${toplevel:-} unusable (unwritable or foreign-owned); using per-user TMPDIR fallback" >&2; fi
+     toplevel=""
+     case "${TMPDIR:-/tmp}" in /*) :;; *) echo "ERROR: TMPDIR ${TMPDIR:-/tmp} is not absolute; refusing" >&2; exit 1;; esac
+     [ -n "$tmpbase" ] || { echo "ERROR: cannot resolve TMPDIR ${TMPDIR:-/tmp}" >&2; exit 1; }
+     [ "${#tmpbase}" -lt 800 ] || { echo "ERROR: TMPDIR ${TMPDIR:-/tmp} resolves to a ${#tmpbase}-character path; shorten TMPDIR or unset it" >&2; exit 1; }
+     root_base="$tmpbase/agent-tmp-$(id -un 2>/dev/null || id -u 2>/dev/null || echo "uid${UID:-unknown}")"; fallback=1  # TMPDIR fallback: skips git exclude, OS may reap
+     [ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base is a symlink; refusing" >&2; exit 1; }
+     if mkdir -m 700 "$root_base" 2>/dev/null; then :; elif [ ! -d "$root_base" ] || [ -L "$root_base" ]; then echo "ERROR: cannot create fallback parent $root_base" >&2; exit 1; fi
+     [ -O "$root_base" ] || { echo "ERROR: fallback parent $root_base not owned by effective user; refusing" >&2; exit 1; }
+     [ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base changed under us; refusing" >&2; exit 1; }
+     chmod 700 "$root_base" || { echo "ERROR: cannot secure fallback parent $root_base" >&2; exit 1; }
+     [ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base changed under us; refusing" >&2; exit 1; }
+   fi
+   if [ -z "$fallback" ] && [ -e "$root_base/.agent-tmp" ] && [ ! -O "$root_base/.agent-tmp" ]; then
+     root_base_safe="$(printf '%s' "$root_base/.agent-tmp" | sed "s/'/'\\\\''/g")"
+     echo "notice: $root_base/.agent-tmp not owned by effective user (sudo residue?); using per-user fallback (before restoring repo-local runs, check for live runs with: ls '$root_base_safe'; coordinate with the owning user, then run: sudo rm -rf '$root_base_safe')" >&2
+     toplevel=""
+     case "${TMPDIR:-/tmp}" in /*) :;; *) echo "ERROR: TMPDIR ${TMPDIR:-/tmp} is not absolute; refusing" >&2; exit 1;; esac
+     [ -n "$tmpbase" ] || { echo "ERROR: cannot resolve TMPDIR ${TMPDIR:-/tmp}" >&2; exit 1; }
+     [ "${#tmpbase}" -lt 800 ] || { echo "ERROR: TMPDIR ${TMPDIR:-/tmp} resolves to a ${#tmpbase}-character path; shorten TMPDIR or unset it" >&2; exit 1; }
+     root_base="$tmpbase/agent-tmp-$(id -un 2>/dev/null || id -u 2>/dev/null || echo "uid${UID:-unknown}")"; fallback=1
+     [ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base is a symlink; refusing" >&2; exit 1; }
+     if mkdir -m 700 "$root_base" 2>/dev/null; then :; elif [ ! -d "$root_base" ] || [ -L "$root_base" ]; then echo "ERROR: cannot create fallback parent $root_base" >&2; exit 1; fi
+     [ -O "$root_base" ] || { echo "ERROR: fallback parent $root_base not owned by effective user; refusing" >&2; exit 1; }
+     [ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base changed under us; refusing" >&2; exit 1; }
+     chmod 700 "$root_base" || { echo "ERROR: cannot secure fallback parent $root_base" >&2; exit 1; }
+     [ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base changed under us; refusing" >&2; exit 1; }
+   fi
+   [ ! -L "$root_base/.agent-tmp" ] || { echo "ERROR: run root $root_base/.agent-tmp is a symlink; refusing" >&2; exit 1; }
+   run_root="$root_base/.agent-tmp"
+   if mkdir -m 700 "$run_root" 2>/dev/null; then :; elif [ ! -d "$run_root" ] || [ -L "$run_root" ]; then echo "ERROR: cannot create run root $run_root" >&2; exit 1; fi
+   [ -O "$run_root" ] || { echo "ERROR: run root $run_root not owned by effective user; refusing" >&2; exit 1; }
+   [ ! -L "$run_root" ] || { echo "ERROR: run root $run_root changed under us; refusing" >&2; exit 1; }
+   chmod 700 "$run_root" || { echo "ERROR: cannot chmod run root $run_root" >&2; exit 1; }
+   [ ! -L "$run_root" ] || { echo "ERROR: run root $run_root changed under us; refusing" >&2; exit 1; }
+   if [ -z "$fallback" ] && git rev-parse --git-dir >/dev/null 2>&1; then
+     exclude="$(git rev-parse --git-path info/exclude 2>/dev/null)" && [ -n "$exclude" ] || { echo "ERROR: cannot locate git exclude file" >&2; exit 1; }
+     mkdir -p "$(dirname "$exclude")" || { echo "ERROR: cannot write $(dirname "$exclude")" >&2; exit 1; }
+     grep -qxF '/.agent-tmp/' "$exclude" 2>/dev/null || echo '/.agent-tmp/' >> "$exclude" || { echo "ERROR: cannot update $exclude" >&2; exit 1; }
+   fi
+   rootcanon="$(realpath "$run_root" 2>/dev/null || readlink -f "$run_root" 2>/dev/null || (cd "$run_root" 2>/dev/null && pwd -P))" && [ -n "$rootcanon" ] || { echo "ERROR: cannot resolve run root $run_root" >&2; exit 1; }
+   if [ -n "${BASH_VERSION:-}${ZSH_VERSION:-}" ]; then
+   find "$rootcanon" -maxdepth 1 -name 'agent-review-report*' ! \( -name 'agent-review-report-rounds' -type d \) -mtime +7 -print0 | while IFS= read -r -d '' p; do if [ -d "$p" ]; then reap_err="$(mktemp "$rootcanon/agent-review-report-reap-err.XXXXXX")" || { echo "WARNING: cannot vet stale entry for reaping (mktemp failed); skipping" >&2; continue; }; if ! fresh="$(find "$p" -type f ! -mtime +7 -print -quit 2>"$reap_err")"; then rm -f "$reap_err"; continue; fi; if [ -n "$fresh" ] || [ -s "$reap_err" ]; then rm -f "$reap_err"; continue; fi; rm -f "$reap_err"; fi; rm -rf "$p" && echo "reaping stale run path: $p" >&2 || echo "ERROR: failed to reap stale run path: $p" >&2; done
+   if [ -d "$rootcanon/agent-review-report-rounds" ]; then find "$rootcanon/agent-review-report-rounds" -mindepth 1 -maxdepth 1 -name 'agent-review-report.*' -mtime +7 -print0 | while IFS= read -r -d '' p; do if [ -d "$p" ]; then reap_err="$(mktemp "$rootcanon/agent-review-report-reap-err.XXXXXX")" || { echo "WARNING: cannot vet stale entry for reaping (mktemp failed); skipping" >&2; continue; }; if ! fresh="$(find "$p" -type f ! -mtime +7 -print -quit 2>"$reap_err")"; then rm -f "$reap_err"; continue; fi; if [ -n "$fresh" ] || [ -s "$reap_err" ]; then rm -f "$reap_err"; continue; fi; rm -f "$reap_err"; fi; rm -rf "$p" && echo "reaping stale run archive: $p" >&2 || echo "ERROR: failed to reap stale run archive: $p" >&2; done; fi
+   else echo "WARNING: skipping 7-day reaping: requires bash or zsh; stale entries accumulate until one bootstrap runs under bash/zsh" >&2; fi
+   # Mirror end (section 13 end anchor).
+   comment_file="$(mktemp "$run_root/agent-review-report-comment.XXXXXX")" || { echo "ERROR: failed to create comment scratch file under $run_root; check permissions and disk space" >&2; exit 1; }
    # ... render the presented report into "$comment_file" ...
-   gh pr comment <pr_number> --body-file "$comment_file"
+   [ -s "$comment_file" ] || { echo "ERROR: empty comment body for PR <pr_number>; refusing to post" >&2; rm -f "${comment_file:?}"; exit 1; }
+   gh pr comment "<pr_number>" --body-file "$comment_file" || { echo "ERROR: gh pr comment failed for PR <pr_number>; body retained at $comment_file (delete it after diagnosis, or leave it for the 7-day reaper)" >&2; exit 1; }
    rm -f "${comment_file:?}"
    ```
+   The comment file carries no EXIT trap by design (mktemp 600 plus 700
+   parents plus the 7-day reaper bound a mid-run-failure leak to disk
+   noise; the `gh`-failure path above deliberately retains the body).
 3. Report the posted comment URL back to the user.
 
 Never use the inline review or review thread APIs, never resolve
@@ -488,5 +805,7 @@ check on the canonicalized path and refuse on mismatch, then `rm -rf
 "${progress_dir:?}"`), after quoting each missing lens's last progress
 line, with secrets redacted per invariant 5 (or `no heartbeat lines`
 when the operative file exists but is empty, or `no progress file` when
-no file exists), into the report.
+no file exists), into the report. Retain `$rounds_dir` (the report ages
+out via the 7-day reaper); delete only the scratch diff and progress
+files above, plus any retained comment body from a failed post.
 

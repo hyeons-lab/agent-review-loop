@@ -1,0 +1,53 @@
+# Mirror: 7 run-root bootstraps stay identical (modulo indentation, reaper pattern).
+unset GIT_DIR GIT_WORK_TREE GIT_EXTERNAL_DIFF GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
+cfg_n="${GIT_CONFIG_COUNT:-0}"; unset GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS; cfg_i=0; while [ "$cfg_i" -lt "$cfg_n" ] 2>/dev/null && [ "$cfg_i" -lt 128 ]; do unset "GIT_CONFIG_KEY_$cfg_i" "GIT_CONFIG_VALUE_$cfg_i"; cfg_i=$((cfg_i+1)); done; unset cfg_n cfg_i
+tmpbase="$(cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)" || tmpbase=""; [ "$tmpbase" = "/" ] || tmpbase="${tmpbase%/}"
+if toplevel="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -w "$toplevel" ] && [ -O "$toplevel" ]; then
+root_base="$toplevel"; fallback=""
+else
+if [ -n "${toplevel:-}" ]; then echo "notice: toplevel ${toplevel:-} unusable (unwritable or foreign-owned); using per-user TMPDIR fallback" >&2; fi
+toplevel=""
+case "${TMPDIR:-/tmp}" in /*) :;; *) echo "ERROR: TMPDIR ${TMPDIR:-/tmp} is not absolute; refusing" >&2; exit 1;; esac
+[ -n "$tmpbase" ] || { echo "ERROR: cannot resolve TMPDIR ${TMPDIR:-/tmp}" >&2; exit 1; }
+[ "${#tmpbase}" -lt 800 ] || { echo "ERROR: TMPDIR ${TMPDIR:-/tmp} resolves to a ${#tmpbase}-character path; shorten TMPDIR or unset it" >&2; exit 1; }
+root_base="$tmpbase/agent-tmp-$(id -un 2>/dev/null || id -u 2>/dev/null || echo "uid${UID:-unknown}")"; fallback=1  # TMPDIR fallback: skips git exclude, OS may reap
+[ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base is a symlink; refusing" >&2; exit 1; }
+if mkdir -m 700 "$root_base" 2>/dev/null; then :; elif [ ! -d "$root_base" ] || [ -L "$root_base" ]; then echo "ERROR: cannot create fallback parent $root_base" >&2; exit 1; fi
+[ -O "$root_base" ] || { echo "ERROR: fallback parent $root_base not owned by effective user; refusing" >&2; exit 1; }
+[ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base changed under us; refusing" >&2; exit 1; }
+chmod 700 "$root_base" || { echo "ERROR: cannot secure fallback parent $root_base" >&2; exit 1; }
+[ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base changed under us; refusing" >&2; exit 1; }
+fi
+if [ -z "$fallback" ] && [ -e "$root_base/.agent-tmp" ] && [ ! -O "$root_base/.agent-tmp" ]; then
+root_base_safe="$(printf '%s' "$root_base/.agent-tmp" | sed "s/'/'\\\\''/g")"
+echo "notice: $root_base/.agent-tmp not owned by effective user (sudo residue?); using per-user fallback (before restoring repo-local runs, check for live runs with: ls '$root_base_safe'; coordinate with the owning user, then run: sudo rm -rf '$root_base_safe')" >&2
+toplevel=""
+case "${TMPDIR:-/tmp}" in /*) :;; *) echo "ERROR: TMPDIR ${TMPDIR:-/tmp} is not absolute; refusing" >&2; exit 1;; esac
+[ -n "$tmpbase" ] || { echo "ERROR: cannot resolve TMPDIR ${TMPDIR:-/tmp}" >&2; exit 1; }
+[ "${#tmpbase}" -lt 800 ] || { echo "ERROR: TMPDIR ${TMPDIR:-/tmp} resolves to a ${#tmpbase}-character path; shorten TMPDIR or unset it" >&2; exit 1; }
+root_base="$tmpbase/agent-tmp-$(id -un 2>/dev/null || id -u 2>/dev/null || echo "uid${UID:-unknown}")"; fallback=1
+[ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base is a symlink; refusing" >&2; exit 1; }
+if mkdir -m 700 "$root_base" 2>/dev/null; then :; elif [ ! -d "$root_base" ] || [ -L "$root_base" ]; then echo "ERROR: cannot create fallback parent $root_base" >&2; exit 1; fi
+[ -O "$root_base" ] || { echo "ERROR: fallback parent $root_base not owned by effective user; refusing" >&2; exit 1; }
+[ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base changed under us; refusing" >&2; exit 1; }
+chmod 700 "$root_base" || { echo "ERROR: cannot secure fallback parent $root_base" >&2; exit 1; }
+[ ! -L "$root_base" ] || { echo "ERROR: fallback parent $root_base changed under us; refusing" >&2; exit 1; }
+fi
+[ ! -L "$root_base/.agent-tmp" ] || { echo "ERROR: run root $root_base/.agent-tmp is a symlink; refusing" >&2; exit 1; }
+run_root="$root_base/.agent-tmp"
+if mkdir -m 700 "$run_root" 2>/dev/null; then :; elif [ ! -d "$run_root" ] || [ -L "$run_root" ]; then echo "ERROR: cannot create run root $run_root" >&2; exit 1; fi
+[ -O "$run_root" ] || { echo "ERROR: run root $run_root not owned by effective user; refusing" >&2; exit 1; }
+[ ! -L "$run_root" ] || { echo "ERROR: run root $run_root changed under us; refusing" >&2; exit 1; }
+chmod 700 "$run_root" || { echo "ERROR: cannot chmod run root $run_root" >&2; exit 1; }
+[ ! -L "$run_root" ] || { echo "ERROR: run root $run_root changed under us; refusing" >&2; exit 1; }
+if [ -z "$fallback" ] && git rev-parse --git-dir >/dev/null 2>&1; then
+exclude="$(git rev-parse --git-path info/exclude 2>/dev/null)" && [ -n "$exclude" ] || { echo "ERROR: cannot locate git exclude file" >&2; exit 1; }
+mkdir -p "$(dirname "$exclude")" || { echo "ERROR: cannot write $(dirname "$exclude")" >&2; exit 1; }
+grep -qxF '/.agent-tmp/' "$exclude" 2>/dev/null || echo '/.agent-tmp/' >> "$exclude" || { echo "ERROR: cannot update $exclude" >&2; exit 1; }
+fi
+rootcanon="$(realpath "$run_root" 2>/dev/null || readlink -f "$run_root" 2>/dev/null || (cd "$run_root" 2>/dev/null && pwd -P))" && [ -n "$rootcanon" ] || { echo "ERROR: cannot resolve run root $run_root" >&2; exit 1; }
+if [ -n "${BASH_VERSION:-}${ZSH_VERSION:-}" ]; then
+find "$rootcanon" -maxdepth 1 -name "PATTOP" ! \( -name 'ROUNDS' -type d \) -mtime +7 -print0 | while IFS= read -r -d '' p; do if [ -d "$p" ]; then reap_err="$(mktemp "$rootcanon/REAPERR.XXXXXX")" || { echo "WARNING: cannot vet stale entry for reaping (mktemp failed); skipping" >&2; continue; }; if ! fresh="$(find "$p" -type f ! -mtime +7 -print -quit 2>"$reap_err")"; then rm -f "$reap_err"; continue; fi; if [ -n "$fresh" ] || [ -s "$reap_err" ]; then rm -f "$reap_err"; continue; fi; rm -f "$reap_err"; fi; rm -rf "$p" && echo "reaping stale run path: $p" >&2 || echo "ERROR: failed to reap stale run path: $p" >&2; done
+if [ -d "$rootcanon/ROUNDS" ]; then find "$rootcanon/ROUNDS" -mindepth 1 -maxdepth 1 -name "PATPER" -mtime +7 -print0 | while IFS= read -r -d '' p; do if [ -d "$p" ]; then reap_err="$(mktemp "$rootcanon/REAPERR.XXXXXX")" || { echo "WARNING: cannot vet stale entry for reaping (mktemp failed); skipping" >&2; continue; }; if ! fresh="$(find "$p" -type f ! -mtime +7 -print -quit 2>"$reap_err")"; then rm -f "$reap_err"; continue; fi; if [ -n "$fresh" ] || [ -s "$reap_err" ]; then rm -f "$reap_err"; continue; fi; rm -f "$reap_err"; fi; rm -rf "$p" && echo "reaping stale run archive: $p" >&2 || echo "ERROR: failed to reap stale run archive: $p" >&2; done; fi
+else echo "WARNING: skipping 7-day reaping: requires bash or zsh; stale entries accumulate until one bootstrap runs under bash/zsh" >&2; fi
+# Mirror end (section 13 end anchor).
