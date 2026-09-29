@@ -3,8 +3,8 @@
 set -euo pipefail
 
 BUNDLE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SKILLS="agent-review-loop agent-review-report agent-review-pr-comments"
-MIRROR_START='# Mirror: 7 run-root bootstraps'
+SKILLS="agent-review-loop agent-review-report agent-review-pr-comments agent-review-check-ci"
+MIRROR_START='# Mirror: 8 run-root bootstraps'
 MIRROR_END='Mirror end'
 cleanup() {
   local exit_code=$?
@@ -54,7 +54,7 @@ if [ "${1:-}" = "--regen-golden" ]; then
       fi
     done
   done
-  [ "$n" -eq 7 ] || { echo "ERROR: expected 7 spans, found $n; fix drift first" >&2; rm -rf "$tmpd"; exit 1; }
+  [ "$n" -eq 8 ] || { echo "ERROR: expected 8 spans, found $n; fix drift first" >&2; rm -rf "$tmpd"; exit 1; }
   tmpg="$(mktemp "${BUNDLE}/tests/fixtures/.golden.XXXXXX")" || { echo "ERROR: cannot create golden temp" >&2; rm -rf "$tmpd"; exit 1; }
   cp "$tmpd/span-1.txt" "$tmpg" || { echo "ERROR: cannot stage golden temp" >&2; rm -f "$tmpg"; rm -rf "$tmpd"; exit 1; }
   chmod 644 "$tmpg" || { echo "ERROR: cannot set golden temp mode" >&2; rm -f "$tmpg"; rm -rf "$tmpd"; exit 1; }
@@ -169,7 +169,7 @@ if grep -qE "installed:|updated:|FAILED" "${LOG_DIR}/rfl-run2.log" || ! grep -q 
 else
   echo "PASS: second run changed nothing"; pass=$((pass+1))
 fi
-check "all 35 files unchanged" test "$(grep -c "unchanged:" "${LOG_DIR}/rfl-run2.log")" = "35"
+check "all 45 files unchanged" test "$(grep -c "unchanged:" "${LOG_DIR}/rfl-run2.log")" = "45"
 
 echo "--- 3. learnings preserved across reinstall ---"
 echo "- **Marker**: test bullet" >> "${FAKE}/.agents/review-refinements.md"
@@ -217,7 +217,7 @@ echo "--- 7. dry-run changes nothing ---"
 fresh_fake
 check "dry-run on empty home" run_install "${LOG_DIR}/rfl-run7a.log" --dry-run
 check "dry-run empty home" test -z "$(ls -A "${FAKE}")"
-check "dry-run plans all 35 file installs" test "$(grep -c "\[dry-run\] install " "${LOG_DIR}/rfl-run7a.log")" = "35"
+check "dry-run plans all 45 file installs" test "$(grep -c "\[dry-run\] install " "${LOG_DIR}/rfl-run7a.log")" = "45"
 check "baseline install for populated dry-run" run_install "${LOG_DIR}/rfl-run7b.log"
 check "dry-run on populated install" run_install "${LOG_DIR}/rfl-run7c.log" --dry-run
 check "populated dry-run reports unchanged" grep -q "unchanged" "${LOG_DIR}/rfl-run7c.log"
@@ -365,6 +365,7 @@ for s in ${SKILLS}; do
     agent-review-loop) want_snippets=3;;
     agent-review-report) want_snippets=5;;
     agent-review-pr-comments) want_snippets=9;;
+    agent-review-check-ci) want_snippets=9;;
   esac
   check "skill snippets pinned: $s" test "$block" -eq "$want_snippets"
 done
@@ -376,9 +377,10 @@ echo "--- 13. run-root bootstraps identical ---"
 bootstrap_count=0
 for s in ${SKILLS}; do
   case "$s" in
-    agent-review-loop) want_bootstraps=2; forbid='agent-review-report|pr-comments|PATTOP|PATPER|ROUNDS|REAPERR';;
-    agent-review-report) want_bootstraps=4; forbid='agent-review-loop|pr-comments|PATTOP|PATPER|ROUNDS|REAPERR';;
-    agent-review-pr-comments) want_bootstraps=1; forbid='agent-review-loop|agent-review-report|PATTOP|PATPER|ROUNDS|REAPERR';;
+    agent-review-loop) want_bootstraps=2; forbid='agent-review-report|pr-comments|check-ci|PATTOP|PATPER|ROUNDS|REAPERR';;
+    agent-review-report) want_bootstraps=4; forbid='agent-review-loop|pr-comments|check-ci|PATTOP|PATPER|ROUNDS|REAPERR';;
+    agent-review-pr-comments) want_bootstraps=1; forbid='agent-review-loop|agent-review-report|check-ci|PATTOP|PATPER|ROUNDS|REAPERR';;
+    agent-review-check-ci) want_bootstraps=1; forbid='agent-review-loop|agent-review-report|pr-comments|PATTOP|PATPER|ROUNDS|REAPERR';;
   esac
   starts=$(grep -n "$MIRROR_START" "${BUNDLE}/skills/$s/SKILL.md" | cut -d: -f1) || true
   check "bootstrap copies pinned: $s" test "$(printf '%s' "$starts" | wc -w)" -eq "$want_bootstraps"
@@ -444,7 +446,7 @@ for s in ${SKILLS}; do
     check "bootstrap reaps archive to stderr: $s@$st" grep -q -F 'echo "reaping stale run archive: $p" >&2' "${LOG_DIR}/bootstrap-${bootstrap_count}.txt"
   done
 done
-check "seven bootstraps extracted" test "$bootstrap_count" -eq 7
+check "eight bootstraps extracted" test "$bootstrap_count" -eq 8
 i=2
 while [ "$i" -le "$bootstrap_count" ]; do
   check "bootstrap matches: bootstrap-$i" cmp "${LOG_DIR}/bootstrap-1.txt" "${LOG_DIR}/bootstrap-$i.txt"
@@ -481,7 +483,7 @@ check "prc trap chains prior" grep -q -F '_prev_exit_trap' "${BUNDLE}/skills/age
 check "prc chmod arm keeps no cleanup (single-shot)" test -z "$(grep 'cannot chmod rounds parent' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" | grep 'rm -rf')"
 # Anchor literals stay single-sourced: build the search patterns from halves
 # so these very lines do not count themselves.
-lit_start='Mirror: 7 run-root boot'
+lit_start='Mirror: 8 run-root boot'
 check "mirror-start literal single-sourced" test "$(grep -c "${lit_start}straps" "${BUNDLE}/tests/verify-install.sh")" = "1"
 lit_end='Mirror e'
 check "mirror-end literal single-sourced" test "$(grep -c "${lit_end}nd" "${BUNDLE}/tests/verify-install.sh")" = "1"
@@ -631,6 +633,48 @@ mk_ln=$(grep -n -F 'mktemp -d "$run_root/pr-comments' "${BUNDLE}/skills/agent-re
 check "trap marker present: prc" test -n "$trap_ln"
 check "scratch marker present: prc" test -n "$mk_ln"
 check "prc trap precedes mktemp" test "$trap_ln" -lt "$mk_ln"
+check "scratch echo shape: cci" grep -q -F 'echo "scratch_dir=$scratch_dir"' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "rounds echo shape: cci" grep -q -F 'echo "rounds_dir=$rounds_dir"' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "toplevel echo shape: cci" grep -q -F 'echo "toplevel=${toplevel:-}"' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "cci trap covers rounds" grep -q -F '[ -n "${rounds_dir:-}" ] && rm -rf "${rounds_dir:?}"' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "cci trap chains prior" grep -q -F '_prev_exit_trap' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "cci chmod arm keeps no cleanup (single-shot)" test -z "$(grep 'cannot chmod rounds parent' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" | grep 'rm -rf' || true)"
+check "atomic rounds parent: cci" grep -q -F 'mkdir -m 700 "$run_root/check-ci-rounds"' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "blocker named: cci" grep -q -F 'may block the rounds parent' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "rounds parent owned: cci" grep -q -F '[ -O "$run_root/check-ci-rounds" ]' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "rounds parent re-asserted: cci" test "$(grep -c -F 'rounds parent $run_root/check-ci-rounds changed under us' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" || true)" = "3"
+check "rounds owned before chmod: cci" test "$(grep -n -F '[ -O "$run_root/check-ci-rounds" ]' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" | cut -d: -f1 | head -n 1)" -lt "$(grep -n -F 'chmod 700 "$run_root/check-ci-rounds"' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" | cut -d: -f1 | head -n 1)"
+check "cci rounds arms keep no cleanup (single-shot)" test -z "$(grep -F 'rounds parent $run_root/check-ci-rounds changed under us' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" | grep 'rm -rf' || true)"
+check "escape note count: cci" test "$(grep -c -F 'embedded single quote' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" || true)" = "4"
+check "unset count: cci" test "$(grep -c -F 'unset GIT_DIR GIT_WORK_TREE' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" || true)" = "2"
+check "hygiene count: cci" test "$(grep -c -F 'unset GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" || true)" = "2"
+check "unset precedes resolve: cci" test "$(grep -n -F 'unset GIT_DIR GIT_WORK_TREE' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" | cut -d: -f1 | head -n 1)" -lt "$(grep -n -F '# Resolve once' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" | cut -d: -f1 | head -n 1)"
+check "innermost worktree: cci" grep -q -F 'INNERMOST worktree' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "never nest: cci" grep -q -F 'never nest a worktree' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "cci trap warns unchainable prior" grep -q -F 'cannot chain prior EXIT trap' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "cci trap gated on bash" grep -q -F 'if [ -n "${BASH_VERSION:-}" ]; then' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "cci trap warns outside bash" grep -q -F 'cannot chain prior EXIT trap outside bash' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "pr input quoted: cci" grep -q -F "gh pr view '<pr_input>'" "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "git add quoted: cci" grep -q -F "git add -- '<file1>' '<file2>'" "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "git push quoted: cci" grep -q -F "git push -u origin 'HEAD:refs/heads/<type>/<branch-name>'" "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "cci cancel lists via encoded branch" grep -q -F 'gh api --paginate --method GET "/repos/{owner}/{repo}/actions/runs" -f branch="$branch"' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "pr number quoted: cci" test "$(grep -c -F 'gh pr view "<pr_number>"' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" || true)" = "2"
+check "pr checks quoted: cci" grep -q -F 'gh pr checks "<pr_number>"' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "cci end rm guarded" test -z "$(grep -F 'rm -rf "${scratch_dir}"' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" || true)"
+check "scratch redirects guarded: cci" test "$(grep -c -F '> "${scratch_dir:?}/' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" || true)" = "2"
+check "toplevel echo count: cci" test "$(grep -c -F 'echo "toplevel=' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" || true)" = "1"
+check "cd-first: cci" grep -q -F "cd '<recorded toplevel>' || { echo \"ERROR: cannot cd to recorded toplevel" "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "cci fence-range start present" grep -q -F "# ${lit_end}nd" "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "cci fence-range end present" grep -q -F '# Check snapshot plus branch run list for the triage SHA' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "cci 1A setup one fence" test "$(sed -n "/# ${lit_end}nd/,/# Check snapshot plus branch run list for the triage SHA/p" "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" | grep -c '^```' || true)" = "0"
+sed -n '/# Resolve once/,/^trap - EXIT$/p' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" > "${LOG_DIR}/cci-resolve-range.txt"
+check "cci resolve range nonempty" test -s "${LOG_DIR}/cci-resolve-range.txt"
+check "cci 1A ERRORs route to stderr" test -z "$(grep -F 'echo "ERROR:' "${LOG_DIR}/cci-resolve-range.txt" | grep -v '>&2' || true)"
+cci_trap_ln=$(grep -n '^trap ' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" | cut -d: -f1 | head -n 1 || true)
+cci_mk_ln=$(grep -n -F 'mktemp -d "$run_root/check-ci' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" | cut -d: -f1 || true)
+check "trap marker present: cci" test -n "$cci_trap_ln"
+check "scratch marker present: cci" test -n "$cci_mk_ln"
+check "cci trap precedes mktemp" test "$cci_trap_ln" -lt "$cci_mk_ln"
 sed -n '/^cleanup() {/,/^}/p' "${BUNDLE}/tests/verify-install.sh" > "${LOG_DIR}/cleanup-fn.sh"
 printf 'set -u\n. "$RW_LD/cleanup-fn.sh"\nunset fail LOG_DIR TEST_DIR\n(exit 3)\ncleanup\n' > "${LOG_DIR}/cleanup-run.sh"
 run_split cleanup-unset env "RW_LD=${LOG_DIR}" bash "${LOG_DIR}/cleanup-run.sh"
@@ -682,7 +726,7 @@ grep -v "${lit_start}straps" "$rb/skills/agent-review-report/SKILL.md" > "$rb/sk
 run_split regen-count "$rb/tests/verify-install.sh" --regen-golden
 check "regen wrong count exits 1" test "$(cat "${LOG_DIR}/split-regen-count.rc")" = "1"
 check "regen wrong count stdout empty" test ! -s "${LOG_DIR}/split-regen-count.out"
-check "regen wrong count names count" grep -q "expected 7 spans" "${LOG_DIR}/split-regen-count.err"
+check "regen wrong count names count" grep -q "expected 8 spans" "${LOG_DIR}/split-regen-count.err"
 check "regen wrong count leaves golden untouched" cmp "$rb/tests/fixtures/bootstrap-golden.orig.txt" "$rb/tests/fixtures/bootstrap-golden.txt"
 rb="$(regen_bundle fixturesfile)"
 rm -rf "$rb/tests/fixtures"
@@ -720,10 +764,10 @@ check "regen missing golden stderr empty" test ! -s "${LOG_DIR}/split-regen-nogo
 check "regen missing golden content right" cmp "$rb/tests/fixtures/bootstrap-golden.orig.txt" "$rb/tests/fixtures/bootstrap-golden.txt"
 check "regen missing golden mode 644" test "$(stat -f %Lp "$rb/tests/fixtures/bootstrap-golden.txt" 2>/dev/null || stat -c %a "$rb/tests/fixtures/bootstrap-golden.txt")" = "644"
 rb="$(regen_bundle update)"
-for sf in "$rb/skills/agent-review-loop/SKILL.md" "$rb/skills/agent-review-report/SKILL.md" "$rb/skills/agent-review-pr-comments/SKILL.md"; do
+for sf in "$rb/skills/agent-review-loop/SKILL.md" "$rb/skills/agent-review-report/SKILL.md" "$rb/skills/agent-review-pr-comments/SKILL.md" "$rb/skills/agent-review-check-ci/SKILL.md"; do
   awk -v me="$MIRROR_END" '{if (index($0, me)) print "# regen update waypoint"; print}' "$sf" > "$sf.new" && mv "$sf.new" "$sf"
 done
-check "regen update waypoint in all spans" test "$(grep -h -F 'regen update waypoint' "$rb/skills/agent-review-loop/SKILL.md" "$rb/skills/agent-review-report/SKILL.md" "$rb/skills/agent-review-pr-comments/SKILL.md" | grep -c -F 'regen update waypoint' || true)" = "7"
+check "regen update waypoint in all spans" test "$(grep -h -F 'regen update waypoint' "$rb/skills/agent-review-loop/SKILL.md" "$rb/skills/agent-review-report/SKILL.md" "$rb/skills/agent-review-pr-comments/SKILL.md" "$rb/skills/agent-review-check-ci/SKILL.md" | grep -c -F 'regen update waypoint' || true)" = "8"
 run_split regen-update "$rb/tests/verify-install.sh" --regen-golden
 check "regen update exits 0" test "$(cat "${LOG_DIR}/split-regen-update.rc")" = "0"
 check "regen update prints diff" grep -q -F -- '--- golden diff (old -> new):' "${LOG_DIR}/split-regen-update.out"
@@ -1309,6 +1353,29 @@ check "prc trap restores prior" grep -q "trap -- 'echo prior' EXIT" "${LOG_DIR}/
 check "prc setup stdout is contract-only" test "$(grep -c -E '^(scratch_dir|rounds_dir|toplevel)=' "${TEST_DIR}/prct3-setup.out" || true)" = "3"
 check "prc setup stdout line count" test "$(grep -c '' "${TEST_DIR}/prct3-setup.out" || true)" = "3"
 check "prc setup rounds re-attaches" test -d "$(grep '^rounds_dir=' "${TEST_DIR}/prct3-setup.out" | cut -d= -f2- || true)"
+awk '/^scratch_dir=""; rounds_dir=""$/{f=1} f{print} f&&/echo "toplevel=/{exit}' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" > "${LOG_DIR}/cci-setup.sh" || true
+awk '/^trap - EXIT$/{f=1} f{print} f&&/rm -rf "/{exit}' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" > "${LOG_DIR}/cci-end.sh" || true
+check "cci setup extracted" grep -q -F 'mktemp -d "$run_root/check-ci' "${LOG_DIR}/cci-setup.sh"
+check "cci setup has trap" grep -q "^trap '" "${LOG_DIR}/cci-setup.sh"
+check "cci end extracted" grep -q -F 'trap - EXIT' "${LOG_DIR}/cci-end.sh"
+cat > "${LOG_DIR}/cci-t3.sh" <<'EOF'
+set -u
+run_root="$RW_TD/ccit3"; mkdir -p "$run_root"; toplevel="$RW_TD"
+trap "echo prior" EXIT
+. "$RW_LD/cci-setup.sh" >"$RW_TD/ccit3-setup.out"
+touch "$rounds_dir/summary.md"; rd="$rounds_dir"
+. "$RW_LD/cci-end.sh" >/dev/null
+[ -f "$rd/summary.md" ] && echo "ROUNDS_KEPT=yes"
+[ -e "$run_root"/check-ci.?????? ] && echo "SCRATCH_LEFT=yes" || echo "SCRATCH_GONE=yes"
+trap -p EXIT
+EOF
+run_split cci-t3 env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" bash "${LOG_DIR}/cci-t3.sh"
+check "cci success rc" test "$(cat "${LOG_DIR}/split-cci-t3.rc")" = "0"
+check "cci trap keeps rounds on success" grep -q "ROUNDS_KEPT=yes" "${LOG_DIR}/split-cci-t3.out"
+check "cci trap removes scratch on success" grep -q "SCRATCH_GONE=yes" "${LOG_DIR}/split-cci-t3.out"
+check "cci trap restores prior" grep -q "trap -- 'echo prior' EXIT" "${LOG_DIR}/split-cci-t3.out"
+check "cci setup stdout is contract-only" test "$(grep -c -E '^(scratch_dir|rounds_dir|toplevel)=' "${TEST_DIR}/ccit3-setup.out" || true)" = "3"
+check "cci setup rounds re-attaches" test -d "$(grep '^rounds_dir=' "${TEST_DIR}/ccit3-setup.out" | cut -d= -f2- || true)"
 {
   echo '_prev_trap_line="trap -- '"'"'unclosed"'
   grep -F '_prev_body="${_prev_trap_line#trap -- }"' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" || true

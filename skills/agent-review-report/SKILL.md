@@ -53,7 +53,7 @@ The skill takes an optional target argument:
   another checkout (inner scratch leaks into the outer repo's untracked
   files). Filter out lockfiles, generated
   code, and binary artifacts into a scratch file:
-  <!-- Bootstrap mirror: the 7 run-root bootstraps (loop section 4 plus heartbeat, report section 1 working-diff plus PR plus heartbeat plus section 6, pr-comments section 1A) stay identical modulo list indentation and reaper name pattern. -->
+  <!-- Bootstrap mirror: the 8 run-root bootstraps (loop section 4 plus heartbeat, report section 1 working-diff plus PR plus heartbeat plus section 6, pr-comments section 1A, check-ci section 1A) stay identical modulo list indentation and reaper name pattern. -->
   ```bash
   unset GIT_DIR GIT_WORK_TREE GIT_EXTERNAL_DIFF GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
   cfg_n="${GIT_CONFIG_COUNT:-0}"; unset GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS; cfg_i=0; while [ "$cfg_i" -lt "$cfg_n" ] 2>/dev/null && [ "$cfg_i" -lt 128 ]; do unset "GIT_CONFIG_KEY_$cfg_i" "GIT_CONFIG_VALUE_$cfg_i"; cfg_i=$((cfg_i+1)); done; unset cfg_n cfg_i
@@ -64,7 +64,7 @@ The skill takes an optional target argument:
     diff_target="HEAD"
   fi
 
-  # Mirror: 7 run-root bootstraps stay identical (modulo indentation, reaper pattern).
+  # Mirror: 8 run-root bootstraps stay identical (modulo indentation, reaper pattern).
   unset GIT_DIR GIT_WORK_TREE GIT_EXTERNAL_DIFF GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
   cfg_n="${GIT_CONFIG_COUNT:-0}"; unset GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS; cfg_i=0; while [ "$cfg_i" -lt "$cfg_n" ] 2>/dev/null && [ "$cfg_i" -lt 128 ]; do unset "GIT_CONFIG_KEY_$cfg_i" "GIT_CONFIG_VALUE_$cfg_i"; cfg_i=$((cfg_i+1)); done; unset cfg_n cfg_i
   tmpbase="$(cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)" || tmpbase=""; [ "$tmpbase" = "/" ] || tmpbase="${tmpbase%/}"
@@ -142,7 +142,7 @@ The skill takes an optional target argument:
   cfg_n="${GIT_CONFIG_COUNT:-0}"; unset GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS; cfg_i=0; while [ "$cfg_i" -lt "$cfg_n" ] 2>/dev/null && [ "$cfg_i" -lt 128 ]; do unset "GIT_CONFIG_KEY_$cfg_i" "GIT_CONFIG_VALUE_$cfg_i"; cfg_i=$((cfg_i+1)); done; unset cfg_n cfg_i
   pr_number="$(gh pr view '<pr_input>' --json number --jq .number)" || { echo "ERROR: gh pr view failed; check PR number or URL" >&2; exit 1; }
   case "$pr_number" in ""|*[!0-9]*) echo "ERROR: resolved PR number is non-numeric: $pr_number" >&2; exit 1;; esac
-  # Mirror: 7 run-root bootstraps stay identical (modulo indentation, reaper pattern).
+  # Mirror: 8 run-root bootstraps stay identical (modulo indentation, reaper pattern).
   unset GIT_DIR GIT_WORK_TREE GIT_EXTERNAL_DIFF GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
   cfg_n="${GIT_CONFIG_COUNT:-0}"; unset GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS; cfg_i=0; while [ "$cfg_i" -lt "$cfg_n" ] 2>/dev/null && [ "$cfg_i" -lt 128 ]; do unset "GIT_CONFIG_KEY_$cfg_i" "GIT_CONFIG_VALUE_$cfg_i"; cfg_i=$((cfg_i+1)); done; unset cfg_n cfg_i
   tmpbase="$(cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)" || tmpbase=""; [ "$tmpbase" = "/" ] || tmpbase="${tmpbase%/}"
@@ -414,7 +414,7 @@ Every reviewer prompt must include:
   _pre="$(git rev-parse --show-toplevel 2>/dev/null)" || _pre=""
   if [ -n "$_pre" ] && { [ ! -w "$_pre" ] || [ ! -O "$_pre" ] || { [ -e "$_pre/.agent-tmp" ] && [ ! -O "$_pre/.agent-tmp" ]; }; }; then _pre=""; fi
   [ "$_pre" = "$_record" ] || { echo "ERROR: toplevel drift: heartbeat is not the section-1 toplevel (live '$_pre' vs recorded '$_record'); cd there and re-run" >&2; exit 1; }
-  # Mirror: 7 run-root bootstraps stay identical (modulo indentation, reaper pattern).
+  # Mirror: 8 run-root bootstraps stay identical (modulo indentation, reaper pattern).
   unset GIT_DIR GIT_WORK_TREE GIT_EXTERNAL_DIFF GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
   cfg_n="${GIT_CONFIG_COUNT:-0}"; unset GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS; cfg_i=0; while [ "$cfg_i" -lt "$cfg_n" ] 2>/dev/null && [ "$cfg_i" -lt 128 ]; do unset "GIT_CONFIG_KEY_$cfg_i" "GIT_CONFIG_VALUE_$cfg_i"; cfg_i=$((cfg_i+1)); done; unset cfg_n cfg_i
   tmpbase="$(cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)" || tmpbase=""; [ "$tmpbase" = "/" ] || tmpbase="${tmpbase%/}"
@@ -614,7 +614,7 @@ On explicit approval:
    1's variables, so it re-runs the run-root bootstrap below, which is
    idempotent and self-sufficient):
    ```bash
-   # Mirror: 7 run-root bootstraps stay identical (modulo indentation, reaper pattern).
+   # Mirror: 8 run-root bootstraps stay identical (modulo indentation, reaper pattern).
    unset GIT_DIR GIT_WORK_TREE GIT_EXTERNAL_DIFF GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
    cfg_n="${GIT_CONFIG_COUNT:-0}"; unset GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS; cfg_i=0; while [ "$cfg_i" -lt "$cfg_n" ] 2>/dev/null && [ "$cfg_i" -lt 128 ]; do unset "GIT_CONFIG_KEY_$cfg_i" "GIT_CONFIG_VALUE_$cfg_i"; cfg_i=$((cfg_i+1)); done; unset cfg_n cfg_i
    tmpbase="$(cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P)" || tmpbase=""; [ "$tmpbase" = "/" ] || tmpbase="${tmpbase%/}"

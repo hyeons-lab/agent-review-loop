@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Review Check CI"
+  short_description: "Check CI status and fix red builds"
+  default_prompt: "Use $agent-review-check-ci to check CI on the target PR and address build issues."
