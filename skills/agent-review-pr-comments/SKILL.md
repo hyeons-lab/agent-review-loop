@@ -1,12 +1,13 @@
 ---
 name: agent-review-pr-comments
-description: Address PR review comments (human feedback and automated review bots) on a target PR, apply and validate the fixes, sync stacked PRs, and fold CI-caught misses back into the shared cross-agent review pillars used by agent-review-loop.
+description: Address PR review comments (human feedback and automated review bots such as Antigravity, Copilot, and similar) on a target PR, apply and validate the fixes, sync stacked PRs, and fold CI-caught misses back into the shared cross-agent review pillars used by agent-review-loop.
 ---
 
 # Agent Review PR Comments (Multi-Agent)
 
 Autonomously address pull request review comments (human feedback and
-automated review bots), apply and validate the fixes, synchronize stacked
+automated review bots such as Antigravity comment reviews, Copilot, and
+similar review apps), apply and validate the fixes, synchronize stacked
 PRs, and synthesize what CI caught into the shared review pillars so local
 pre-merge review keeps getting stronger without growing an unbounded
 checklist.
@@ -174,11 +175,11 @@ echo "toplevel=${toplevel:-}"
 gh api "/repos/{owner}/{repo}/pulls/<pr_number>/comments" > "${scratch_dir:?}/diff-comments.json" || { echo "ERROR: diff-comment fetch failed; check the PR number and gh auth" >&2; exit 1; }
 jq -r '.[] | "DIFF [\(.id)] \(.path):\(.line) by \(.user.login):\n\(.body)\n"' "${scratch_dir}/diff-comments.json" || { echo "ERROR: diff-comment render failed; check jq and the JSON payload" >&2; exit 1; }
 
-# Submitted review summaries (approve/changes-requested bodies: Copilot, humans)
+# Submitted review summaries (approve/changes-requested bodies: Antigravity, Copilot, humans)
 gh api "/repos/{owner}/{repo}/pulls/<pr_number>/reviews" > "${scratch_dir:?}/reviews.json" || { echo "ERROR: review fetch failed; check the PR number and gh auth" >&2; exit 1; }
 jq -r '.[] | "REVIEW [\(.id)] \(.state) by \(.user.login):\n\(.body)\n"' "${scratch_dir}/reviews.json" || { echo "ERROR: review render failed; check jq and the JSON payload" >&2; exit 1; }
 
-# Top-level issue comments (review bots, humans)
+# Top-level issue comments (review bots such as Antigravity, plus humans)
 gh api "/repos/{owner}/{repo}/issues/<pr_number>/comments" > "${scratch_dir:?}/issue-comments.json" || { echo "ERROR: issue-comment fetch failed; check the PR number and gh auth" >&2; exit 1; }
 jq -r '.[] | "ISSUE [\(.id)] by \(.user.login):\n\(.body)\n"' "${scratch_dir}/issue-comments.json" || { echo "ERROR: issue-comment render failed; check jq and the JSON payload" >&2; exit 1; }
 
@@ -208,11 +209,14 @@ when it is installed alongside this one
 against the titles above plus every shared learnings file that exists (see
 section 3).
 
-Treat bot feedback as unverified until checked against the *current*
-worktree code: a bot often flags logic that was already refactored or is
-already handled. Document each false positive with its technical reasoning
-plus the command and output that disproves it, so the next reader need not
-re-derive the check, instead of changing code to silence it.
+Address every review source on the PR: human comments plus all bot
+reviews (Antigravity comment reviews, Copilot, and any other review
+app posting here). Treat bot feedback as unverified until checked
+against the *current* worktree code: a bot often flags logic that was
+already refactored or is already handled. Document each false positive
+with its technical reasoning plus the command and output that disproves
+it, so the next reader need not re-derive the check, instead of
+changing code to silence it.
 
 Classify each comment:
 - **Actionable Fix**: a valid defect or improvement. Plan and apply the fix.
