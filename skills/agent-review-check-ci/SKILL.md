@@ -172,8 +172,8 @@ echo "rounds_dir=$rounds_dir"
 echo "toplevel=${toplevel:-}"
 
 # Check snapshot plus branch run list for the triage SHA
-gh pr checks "<pr_number>" --json name,bucket,workflowName > "${scratch_dir:?}/checks.json" || { echo "ERROR: checks fetch failed; check the PR number and gh auth" >&2; exit 1; }
-jq -r '.[] | "\(.bucket): \(.name) [\(.workflowName // "external")]"' "${scratch_dir}/checks.json" || { echo "ERROR: checks render failed; check jq and the JSON payload" >&2; exit 1; }
+gh pr checks "<pr_number>" --json name,bucket,workflow > "${scratch_dir:?}/checks.json" || { echo "ERROR: checks fetch failed; check the PR number and gh auth" >&2; exit 1; }
+jq -r '.[] | "\(.bucket): \(.name) [\(.workflow // "external")]"' "${scratch_dir}/checks.json" || { echo "ERROR: checks render failed; check jq and the JSON payload" >&2; exit 1; }
 gh run list --branch "<branch>" --limit 20 --json databaseId,conclusion,name,status,headSha > "${scratch_dir:?}/runs.json" || { echo "ERROR: run list fetch failed; check the branch and gh auth" >&2; exit 1; }
 jq -r '.[] | "\(.status)/\(.conclusion // "none"): \(.name) #\(.databaseId) @ \(.headSha[0:7])"' "${scratch_dir}/runs.json" || { echo "ERROR: run list render failed; check jq and the JSON payload" >&2; exit 1; }
 
