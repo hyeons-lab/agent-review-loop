@@ -1,16 +1,16 @@
 ---
-name: agent-review-pr-comments
-description: Address PR review comments (human feedback and automated review bots such as Antigravity, Copilot, and similar) on a target PR, apply and validate the fixes, sync stacked PRs, and fold CI-caught misses back into the shared cross-agent review pillars used by agent-review-loop.
+name: agent-review-check-ci
+description: Check CI status on a target PR, diagnose and fix red builds, and fold CI-caught misses back into the shared cross-agent review pillars used by agent-review-loop.
 ---
 
-# Agent Review PR Comments (Multi-Agent)
+# Agent Review Check CI (Multi-Agent)
 
-Autonomously address pull request review comments (human feedback and
-automated review bots such as Antigravity comment reviews, Copilot, and
-similar review apps), apply and validate the fixes, synchronize stacked
-PRs, and synthesize what CI caught into the shared review pillars so local
-pre-merge review keeps getting stronger without growing an unbounded
-checklist.
+Autonomously check continuous integration status on a target pull
+request, diagnose red builds (build breaks, test failures, lint,
+flakes, and infra outages), reproduce each failure locally, apply
+and validate fixes, and synthesize what CI caught into the shared
+review pillars so local pre-merge review keeps getting stronger
+without growing an unbounded checklist.
 
 This skill runs in Muse, Claude Code, Codex, and Antigravity/Gemini. It
 runs its `gh` and `git` commands directly and needs no subagents. It shares
@@ -40,15 +40,16 @@ pillars plus the evolving shared learnings file.
 
 ```mermaid
 flowchart TD
-    A[Fetch PR comments & CI reviews] --> B[Triage & categorize feedback]
-    B --> C[Apply code fixes in the worktree]
-    C --> D[Run local format, lint & test checks]
-    D --> E[Thematic synthesis: generalize the shared pillars]
-    E --> F[Commit, cascade-rebase the stack & submit]
-    F --> G[Cancel superseded CI runs & verify checks]
-    G -->|"checks red, cycle < 3"| A
-    G -->|"checks green"| H[Output summary]
-    G -->|"checks red, cycle = 3"| I[Stop and report]
+    A[Fetch CI status & run list] --> B[Triage failures by class]
+    B --> C[Reproduce each failure locally]
+    C --> D[Apply code fixes in the worktree]
+    D --> E[Run local format, lint & test checks]
+    E --> F[Thematic synthesis: generalize the shared pillars]
+    F --> G[Commit & push the fix]
+    G --> H[Verify CI checks settle green]
+    H -->|"checks red, cycle < 3"| A
+    H -->|"checks green"| I[Output summary]
+    H -->|"checks red, cycle = 3"| J[Stop and report]
 ```
 
 ## Prerequisites
@@ -75,24 +76,23 @@ untracked files).
 
 ---
 
-## 1. Fetch & triage PR comments
+## 1. Fetch CI status & triage failures
 
 On cycles after the first, re-read the shared refinements write target
 (same fresh-read rule as section 3) before triaging, so this cycle audits
 against lessons earlier cycles filed.
 
-### A. Query the GitHub API for feedback
+### A. Snapshot checks plus resolve
 
-Retrieve inline review comments, submitted review summaries, and
-top-level issue comments for the target PR. Resolve the input first,
-then fetch:
+Resolve the input first, snapshot the check states and the branch run
+list, then print the triage values for the summary:
 
 <!-- Bootstrap mirror: the 8 run-root bootstraps (loop section 4 plus heartbeat, report section 1 working-diff plus PR plus heartbeat plus section 6, pr-comments section 1A, check-ci section 1A) stay identical modulo list indentation and reaper name pattern. -->
 ```bash
 unset GIT_DIR GIT_WORK_TREE GIT_EXTERNAL_DIFF GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
 cfg_n="${GIT_CONFIG_COUNT:-0}"; unset GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS; cfg_i=0; while [ "$cfg_i" -lt "$cfg_n" ] 2>/dev/null && [ "$cfg_i" -lt 128 ]; do unset "GIT_CONFIG_KEY_$cfg_i" "GIT_CONFIG_VALUE_$cfg_i"; cfg_i=$((cfg_i+1)); done; unset cfg_n cfg_i
-# Resolve once: canonical number plus the triage SHA for the summary
-gh pr view '<pr_input>' --json number,headRefOid --jq '"number: \(.number)", "triage_sha: \(.headRefOid)"' || { echo "ERROR: PR resolve failed; check the number or URL and gh auth" >&2; exit 1; }
+# Resolve once: canonical number plus the triage SHA and branch for the summary
+gh pr view '<pr_input>' --json number,headRefOid,headRefName --jq '"number: \(.number)", "triage_sha: \(.headRefOid)", "branch: \(.headRefName)"' || { echo "ERROR: PR resolve failed; check the number or URL and gh auth" >&2; exit 1; }
 
 # Mirror: 8 run-root bootstraps stay identical (modulo indentation, reaper pattern).
 unset GIT_DIR GIT_WORK_TREE GIT_EXTERNAL_DIFF GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
@@ -143,8 +143,8 @@ if [ -z "$fallback" ] && git rev-parse --git-dir >/dev/null 2>&1; then
 fi
 rootcanon="$(realpath "$run_root" 2>/dev/null || readlink -f "$run_root" 2>/dev/null || (cd "$run_root" 2>/dev/null && pwd -P))" && [ -n "$rootcanon" ] || { echo "ERROR: cannot resolve run root $run_root" >&2; exit 1; }
 if [ -n "${BASH_VERSION:-}${ZSH_VERSION:-}" ]; then
-find "$rootcanon" -maxdepth 1 -name 'pr-comments*' ! \( -name 'pr-comments-rounds' -type d \) -mtime +7 -print0 | while IFS= read -r -d '' p; do if [ -d "$p" ]; then reap_err="$(mktemp "$rootcanon/pr-comments-reap-err.XXXXXX")" || { echo "WARNING: cannot vet stale entry for reaping (mktemp failed); skipping" >&2; continue; }; if ! fresh="$(find "$p" -type f ! -mtime +7 -print -quit 2>"$reap_err")"; then rm -f "$reap_err"; continue; fi; if [ -n "$fresh" ] || [ -s "$reap_err" ]; then rm -f "$reap_err"; continue; fi; rm -f "$reap_err"; fi; rm -rf "$p" && echo "reaping stale run path: $p" >&2 || echo "ERROR: failed to reap stale run path: $p" >&2; done
-if [ -d "$rootcanon/pr-comments-rounds" ]; then find "$rootcanon/pr-comments-rounds" -mindepth 1 -maxdepth 1 -name 'pr-comments.*' -mtime +7 -print0 | while IFS= read -r -d '' p; do if [ -d "$p" ]; then reap_err="$(mktemp "$rootcanon/pr-comments-reap-err.XXXXXX")" || { echo "WARNING: cannot vet stale entry for reaping (mktemp failed); skipping" >&2; continue; }; if ! fresh="$(find "$p" -type f ! -mtime +7 -print -quit 2>"$reap_err")"; then rm -f "$reap_err"; continue; fi; if [ -n "$fresh" ] || [ -s "$reap_err" ]; then rm -f "$reap_err"; continue; fi; rm -f "$reap_err"; fi; rm -rf "$p" && echo "reaping stale run archive: $p" >&2 || echo "ERROR: failed to reap stale run archive: $p" >&2; done; fi
+find "$rootcanon" -maxdepth 1 -name 'check-ci*' ! \( -name 'check-ci-rounds' -type d \) -mtime +7 -print0 | while IFS= read -r -d '' p; do if [ -d "$p" ]; then reap_err="$(mktemp "$rootcanon/check-ci-reap-err.XXXXXX")" || { echo "WARNING: cannot vet stale entry for reaping (mktemp failed); skipping" >&2; continue; }; if ! fresh="$(find "$p" -type f ! -mtime +7 -print -quit 2>"$reap_err")"; then rm -f "$reap_err"; continue; fi; if [ -n "$fresh" ] || [ -s "$reap_err" ]; then rm -f "$reap_err"; continue; fi; rm -f "$reap_err"; fi; rm -rf "$p" && echo "reaping stale run path: $p" >&2 || echo "ERROR: failed to reap stale run path: $p" >&2; done
+if [ -d "$rootcanon/check-ci-rounds" ]; then find "$rootcanon/check-ci-rounds" -mindepth 1 -maxdepth 1 -name 'check-ci.*' -mtime +7 -print0 | while IFS= read -r -d '' p; do if [ -d "$p" ]; then reap_err="$(mktemp "$rootcanon/check-ci-reap-err.XXXXXX")" || { echo "WARNING: cannot vet stale entry for reaping (mktemp failed); skipping" >&2; continue; }; if ! fresh="$(find "$p" -type f ! -mtime +7 -print -quit 2>"$reap_err")"; then rm -f "$reap_err"; continue; fi; if [ -n "$fresh" ] || [ -s "$reap_err" ]; then rm -f "$reap_err"; continue; fi; rm -f "$reap_err"; fi; rm -rf "$p" && echo "reaping stale run archive: $p" >&2 || echo "ERROR: failed to reap stale run archive: $p" >&2; done; fi
 else echo "WARNING: skipping 7-day reaping: requires bash or zsh; stale entries accumulate until one bootstrap runs under bash/zsh" >&2; fi
 # Mirror end (section 13 end anchor).
 scratch_dir=""; rounds_dir=""
@@ -158,39 +158,33 @@ else
   echo "WARNING: cannot chain prior EXIT trap outside bash; installing unchained" >&2
 fi
 trap '[ -n "${scratch_dir:-}" ] && rm -rf "${scratch_dir:?}" || true; [ -n "${rounds_dir:-}" ] && rm -rf "${rounds_dir:?}" || true; [ -n "${_prev_exit_trap:-}" ] && eval "${_prev_exit_trap:-}" || true' EXIT
-scratch_dir="$(mktemp -d "$run_root/pr-comments.XXXXXX")" || { echo "ERROR: failed to create scratch directory under $run_root; check permissions and disk space" >&2; exit 1; }
-[ ! -L "$run_root/pr-comments-rounds" ] || { echo "ERROR: rounds parent $run_root/pr-comments-rounds is a symlink; refusing" >&2; exit 1; }
-mkdir -m 700 "$run_root/pr-comments-rounds" 2>/dev/null || [ -d "$run_root/pr-comments-rounds" ] || { echo "ERROR: failed to create rounds parent $run_root/pr-comments-rounds" >&2; exit 1; }
-[ ! -L "$run_root/pr-comments-rounds" ] || { echo "ERROR: rounds parent $run_root/pr-comments-rounds changed under us; refusing" >&2; exit 1; }
-[ -O "$run_root/pr-comments-rounds" ] || { echo "ERROR: rounds parent $run_root/pr-comments-rounds not owned by effective user; refusing" >&2; exit 1; }
-rounds_dir="$run_root/pr-comments-rounds/$(basename "$scratch_dir")" && mkdir -m 700 "$rounds_dir" || { echo "ERROR: failed to create rounds archive $rounds_dir (a non-directory entry may block the rounds parent)" >&2; exit 1; }
-[ ! -L "$run_root/pr-comments-rounds" ] || { echo "ERROR: rounds parent $run_root/pr-comments-rounds changed under us; refusing" >&2; exit 1; }
-chmod 700 "$run_root/pr-comments-rounds" || { echo "ERROR: cannot chmod rounds parent $run_root/pr-comments-rounds" >&2; exit 1; }
-[ ! -L "$run_root/pr-comments-rounds" ] || { echo "ERROR: rounds parent $run_root/pr-comments-rounds changed under us; refusing" >&2; exit 1; }
+scratch_dir="$(mktemp -d "$run_root/check-ci.XXXXXX")" || { echo "ERROR: failed to create scratch directory under $run_root; check permissions and disk space" >&2; exit 1; }
+[ ! -L "$run_root/check-ci-rounds" ] || { echo "ERROR: rounds parent $run_root/check-ci-rounds is a symlink; refusing" >&2; exit 1; }
+mkdir -m 700 "$run_root/check-ci-rounds" 2>/dev/null || [ -d "$run_root/check-ci-rounds" ] || { echo "ERROR: failed to create rounds parent $run_root/check-ci-rounds" >&2; exit 1; }
+[ ! -L "$run_root/check-ci-rounds" ] || { echo "ERROR: rounds parent $run_root/check-ci-rounds changed under us; refusing" >&2; exit 1; }
+[ -O "$run_root/check-ci-rounds" ] || { echo "ERROR: rounds parent $run_root/check-ci-rounds not owned by effective user; refusing" >&2; exit 1; }
+rounds_dir="$run_root/check-ci-rounds/$(basename "$scratch_dir")" && mkdir -m 700 "$rounds_dir" || { echo "ERROR: failed to create rounds archive $rounds_dir (a non-directory entry may block the rounds parent)" >&2; exit 1; }
+[ ! -L "$run_root/check-ci-rounds" ] || { echo "ERROR: rounds parent $run_root/check-ci-rounds changed under us; refusing" >&2; exit 1; }
+chmod 700 "$run_root/check-ci-rounds" || { echo "ERROR: cannot chmod rounds parent $run_root/check-ci-rounds" >&2; exit 1; }
+[ ! -L "$run_root/check-ci-rounds" ] || { echo "ERROR: rounds parent $run_root/check-ci-rounds changed under us; refusing" >&2; exit 1; }
 echo "scratch_dir=$scratch_dir"
 echo "rounds_dir=$rounds_dir"
 echo "toplevel=${toplevel:-}"
 
-# Inline diff comments
-gh api "/repos/{owner}/{repo}/pulls/<pr_number>/comments" > "${scratch_dir:?}/diff-comments.json" || { echo "ERROR: diff-comment fetch failed; check the PR number and gh auth" >&2; exit 1; }
-jq -r '.[] | "DIFF [\(.id)] \(.path):\(.line) by \(.user.login):\n\(.body)\n"' "${scratch_dir}/diff-comments.json" || { echo "ERROR: diff-comment render failed; check jq and the JSON payload" >&2; exit 1; }
-
-# Submitted review summaries (approve/changes-requested bodies: Antigravity, Copilot, humans)
-gh api "/repos/{owner}/{repo}/pulls/<pr_number>/reviews" > "${scratch_dir:?}/reviews.json" || { echo "ERROR: review fetch failed; check the PR number and gh auth" >&2; exit 1; }
-jq -r '.[] | "REVIEW [\(.id)] \(.state) by \(.user.login):\n\(.body)\n"' "${scratch_dir}/reviews.json" || { echo "ERROR: review render failed; check jq and the JSON payload" >&2; exit 1; }
-
-# Top-level issue comments (review bots such as Antigravity, plus humans)
-gh api "/repos/{owner}/{repo}/issues/<pr_number>/comments" > "${scratch_dir:?}/issue-comments.json" || { echo "ERROR: issue-comment fetch failed; check the PR number and gh auth" >&2; exit 1; }
-jq -r '.[] | "ISSUE [\(.id)] by \(.user.login):\n\(.body)\n"' "${scratch_dir}/issue-comments.json" || { echo "ERROR: issue-comment render failed; check jq and the JSON payload" >&2; exit 1; }
+# Check snapshot plus branch run list for the triage SHA
+gh pr checks "<pr_number>" --json name,bucket,workflow > "${scratch_dir:?}/checks.json" || { echo "ERROR: checks fetch failed; check the PR number and gh auth" >&2; exit 1; }
+jq -r '.[] | "\(.bucket): \(.name) [\(.workflow // "external")]"' "${scratch_dir}/checks.json" || { echo "ERROR: checks render failed; check jq and the JSON payload" >&2; exit 1; }
+gh run list --branch "<branch>" --limit 20 --json databaseId,conclusion,name,status,headSha > "${scratch_dir:?}/runs.json" || { echo "ERROR: run list fetch failed; check the branch and gh auth" >&2; exit 1; }
+jq -r '.[] | "\(.status)/\(.conclusion // "none"): \(.name) #\(.databaseId) @ \(.headSha[0:7])"' "${scratch_dir}/runs.json" || { echo "ERROR: run list render failed; check jq and the JSON payload" >&2; exit 1; }
 
 trap - EXIT
 [ -n "${_prev_exit_trap:-}" ] && trap "${_prev_exit_trap:-}" EXIT || true
 rm -rf "${scratch_dir:?}"
 ```
 
-### B. Categorize the findings
+### B. Categorize the failures
 
-File every finding under one of the 8 Core Thematic Pillars (titles are
+File every red check under one of the 8 Core Thematic Pillars (titles are
 exact; the sibling `agent-review-loop` skill's base pillars file defines
 them):
 
@@ -209,37 +203,58 @@ when it is installed alongside this one
 against the titles above plus every shared learnings file that exists (see
 section 3).
 
-Address every review source on the PR: human comments plus all bot
-reviews (Antigravity comment reviews, Copilot, and any other review
-app posting here). Treat bot feedback as unverified until checked
-against the *current* worktree code: a bot often flags logic that was
-already refactored or is already handled. Document each false positive
-with its technical reasoning plus the command and output that disproves
-it, so the next reader need not re-derive the check, instead of
-changing code to silence it.
+Then classify each failure by cause before touching code:
 
-Classify each comment:
-- **Actionable Fix**: a valid defect or improvement. Plan and apply the fix.
-- **Outdated / Already Fixed**: comment references code that has already changed.
-- **Invalid / Intentional**: comment suggests a change that violates requirements or invariants.
-  Explain why politely in the comment response thread.
+- **Build break**: compilation or packaging fails. Fix the code, never the
+  workflow, unless the workflow itself is the defect.
+- **Test failure**: a test fails on the branch. Reproduce it locally (see
+  section 2) before changing anything.
+- **Lint or format**: a style gate fails. Run the repo's own formatter or
+  linter; never hand-format what the tool owns.
+- **Flaky or infra**: the failure is intermittent, environmental (runner,
+  network, cache, service outage), or fails identically on `main`. Rerun
+  once with `gh run rerun` and link the flake before changing code.
+- **Main is red too**: verify with the same checks on the base branch
+  before blaming this PR. A branch fix cannot green a broken base.
+
+Treat a red check as unverified until checked against the *current*
+worktree code and the *triage_sha* from section 1A: CI often reports on a
+stale push, and a mid-run push shows as drift. Document each stale or
+external failure with its technical reasoning plus the command and output
+that disproves branch blame, instead of changing code to silence it.
 
 ---
 
-## 2. Apply fixes & validate locally
+## 2. Diagnose, fix & validate locally
 
-1. **Implement the fixes** with file editing tools in the worktree. Keep
+1. **Fetch the failed logs and rerun flakes.** Pull the failing portion
+   of each red run, then rerun once when the failure smells flaky or
+   environmental before changing code:
+   ```bash
+   gh run view "<run-id>" --log-failed || { echo "ERROR: log fetch failed; check the run id and gh auth" >&2; exit 1; }
+   gh run rerun "<run-id>" --failed || { echo "ERROR: rerun failed; rerun manually or continue to a code fix" >&2; exit 1; }
+   ```
+   Rerun only when the log shows intermittence (timeout, connection
+   reset, runner lost, cache poison) or the same job passes on retry
+   history; a deterministic failure goes straight to a code fix. Record
+   every rerun with its run id and outcome so the summary distinguishes
+   fixed code from quieted flakes.
+2. **Reproduce locally.** Re-run each deterministic failure with the
+   repository's own commands and quote the reproduction as command plus
+   result. A fix without a local reproduction is a guess; prove the
+   failure exists on the branch first.
+3. **Implement the fixes** with file editing tools in the worktree. Keep
    each fix minimal and behavior-scoped. Every fix ships with a test or
    reproduction run quoted as command plus result; prove each new
    regression test non-vacuous by showing it fails with the fix reverted.
    Before any fix that is large or structurally risky (broad refactor, API
    or signature change, control flow that could ripple), stop and ask the
    user before applying it.
-2. **Generated-code synchronization** (only when a checked-in generated
+4. **Generated-code synchronization** (only when a checked-in generated
    surface changed): regenerate every derived artifact the repo checks in
    (bindings, clients, docs) with the repo's own commands and confirm the
    regeneration leaves a zero git diff.
-3. **Format, lint, and tests**: discover and run the repository's own
+5. **Format, lint, and tests**: discover and run the repository's own
    gates; never substitute generic checks. Read the CI workflows and
    project docs first, then at minimum run the format gate, the linters
    for every affected language, and the full test files or packages
@@ -260,9 +275,9 @@ red and the workflow loops back through fixes, each cycle's lesson goes in
 immediately. Later cycles in the same run read what earlier cycles filed,
 so the same class of miss is caught locally the second time.
 
-When CI catches something local review missed, file the lesson in the
-shared refinements file every skill reads. Resolution order for reading
-(the more specific file wins a direct conflict):
+When a CI failure reveals a gap local review should have caught, file the
+lesson in the shared refinements file every skill reads. Resolution order
+for reading (the more specific file wins a direct conflict):
 
 - `$REVIEW_REFINEMENTS_FILE` when set (explicit override).
 - Repo-local `.agents/review-refinements.md` (project specific).
@@ -371,13 +386,13 @@ When updating the target refinements file, follow this protocol strictly:
 
 ---
 
-## 4. Commit, rebase the stack & manage CI
+## 4. Commit, push & manage CI
 
 1. **Commit.** Conventional Commits, staged by name, and never add AI
    attribution, co-author, or session trailers:
    ```bash
    git add -- '<file1>' '<file2>'
-   git commit -m "fix(<scope>): <what the review feedback asked for>"
+   git commit -m "fix(<scope>): <what the failing check asked for>"
    ```
    (one single-quoted pathspec per file (paste each path inside the single quotes; escape an embedded single quote as `'\''`): quoting a multi-file string stages
    nothing, and leaving placeholders unquoted breaks parsing).
@@ -416,17 +431,7 @@ When updating the target refinements file, follow this protocol strictly:
    unfinished runs of every status are listed (gated runs leak past a
    queued-only filter), and the tip is re-read after listing so a
    concurrent push's fresh runs are never cancelled.
-4. **Resolve addressed review threads** via GraphQL, once the fix is
-   pushed:
-   ```bash
-   gh api graphql -f query='
-   mutation($threadId: ID!) {
-     resolveReviewThread(input: {threadId: $threadId}) {
-       thread { isResolved }
-     }
-   }' -F threadId="$THREAD_ID" || { echo "ERROR: thread resolve failed for $THREAD_ID; retry or resolve manually" >&2; exit 1; }
-   ```
-5. **Verify CI.** Poll bounded until checks settle (at most 30 rounds,
+4. **Verify CI.** Poll bounded until checks settle (at most 30 rounds,
    60 seconds apart; a timeout counts as inconclusive and is reported as
    such), then read the status column:
    ```bash
@@ -456,17 +461,17 @@ When updating the target refinements file, follow this protocol strictly:
 
 Give the user a structured summary:
 
-1. **Reviewed scope**: PR number plus the `triage_sha` printed by the
-   section 1A resolve step, so a mid-run push shows as drift.
-2. **Addressed review items**: each comment handled, with file paths, line
-   numbers, and what changed.
-3. **False positives / dismissed feedback**: with the technical
-   justification and disproving command for each.
+1. **Reviewed scope**: PR number plus the `triage_sha` and `branch`
+   printed by the section 1A resolve step, so a mid-run push shows as
+   drift.
+2. **Fixed checks**: each red check addressed, with run ids, log
+   excerpts, file paths, line numbers, and what changed.
+3. **Flakes and reruns**: rerun run ids with outcomes, so quieted flakes
+   are never mistaken for fixed code.
 4. **Shared pillars updated**: which pillar bullets in the shared
    refinements file were added or refined per cycle (with pillar numbers),
    and which redundant specific checks were folded in.
-5. **Stack & CI status**: current commit SHA, stack sync state, and the
-   real check results.
+5. **CI status**: current commit SHA and the real check results.
 6. **Persist**: write the summary above to `$rounds_dir/summary.md`
    (created in section 1A alongside `$scratch_dir`, whose paths section
    1A prints; section 1A deletes the scratch dir at its end while the
@@ -484,7 +489,7 @@ Give the user a structured summary:
    of the `rounds_dir=` path echoed at setup as <run-id>, or, when
    `$scratch_dir` is still set (same shell; the dir itself is deleted
    at section 1A's end by design), `$(basename "$scratch_dir")`, and
-   recompute `rounds_dir="$run_root/pr-comments-rounds/<run-id>"`.
+   recompute `rounds_dir="$run_root/check-ci-rounds/<run-id>"`.
    Enforce immediately: `[ -n "$rounds_dir" ] && [ -d "$rounds_dir" ]
    || { echo "ERROR: cannot re-attach rounds archive
    (rounds_dir='$rounds_dir' run_root='$run_root'); re-run setup for a
