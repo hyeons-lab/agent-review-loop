@@ -1,16 +1,16 @@
 ---
 name: agent-review-pr-comments
-description: Address PR review comments (human feedback and automated review bots such as Antigravity, Copilot, and similar) on a target PR, apply and validate the fixes, sync stacked PRs, and fold CI-caught misses back into the shared cross-agent review pillars used by agent-review-loop.
+description: Address PR review comments (human feedback, automated review bots such as Antigravity and Copilot, and check-run annotations from Xcode Cloud, App Store Connect, or linters) on a target PR, apply and validate the fixes, sync stacked PRs, and fold CI-caught misses back into the shared cross-agent review pillars used by agent-review-loop.
 ---
 
 # Agent Review PR Comments (Multi-Agent)
 
-Autonomously address pull request review comments (human feedback and
-automated review bots such as Antigravity comment reviews, Copilot, and
-similar review apps), apply and validate the fixes, synchronize stacked
-PRs, and synthesize what CI caught into the shared review pillars so local
-pre-merge review keeps getting stronger without growing an unbounded
-checklist.
+Autonomously address pull request review comments (human feedback,
+automated review bots such as Antigravity comment reviews and Copilot,
+and check-run annotations from Xcode Cloud, App Store Connect, or linters),
+apply and validate the fixes, synchronize stacked PRs, and synthesize what
+CI caught into the shared review pillars so local pre-merge review keeps
+getting stronger without growing an unbounded checklist.
 
 This skill runs in Muse, Claude Code, Codex, and Antigravity/Gemini. It
 runs its `gh` and `git` commands directly and needs no subagents. It shares
@@ -63,8 +63,9 @@ The skill takes a target PR number or URL (`<pr_input>`; paste it inside the sin
 use the open PR for the current branch and stop when there is not
 exactly one. Run in a checkout of the PR's repository (or its worktree):
 `gh` fills `{owner}` and `{repo}` in API paths from that checkout.
-Section 1A resolves the input to a number once; use that number for
-`<pr_number>` in every later snippet. If the work lives in a git
+Section 1A resolves the input to a number and triage SHA once; use that
+number for `<pr_number>` and that SHA for `<triage_sha>` in every later
+snippet. If the work lives in a git
 worktree, `cd` into the INNERMOST worktree containing the files under
 review first and run every fenced block below unmodified; never sprinkle
 `-C` inside the mirrored span (a partial rewrite splits state: in normal
@@ -83,8 +84,9 @@ against lessons earlier cycles filed.
 
 ### A. Query the GitHub API for feedback
 
-Retrieve inline review comments, submitted review summaries, and
-top-level issue comments for the target PR. Resolve the input first,
+Retrieve inline review comments, submitted review summaries, top-level
+issue comments, and check-run annotations (Xcode Cloud, App Store Connect,
+compiler or linter notices) for the target PR. Resolve the input first,
 then fetch:
 
 <!-- Bootstrap mirror: the 7 run-root bootstraps (loop section 4 plus heartbeat, report section 1 working-diff plus PR plus heartbeat plus section 6, pr-comments section 1A) stay identical modulo list indentation and reaper name pattern. -->
@@ -183,6 +185,17 @@ jq -r '.[] | "REVIEW [\(.id)] \(.state) by \(.user.login):\n\(.body)\n"' "${scra
 gh api "/repos/{owner}/{repo}/issues/<pr_number>/comments" > "${scratch_dir:?}/issue-comments.json" || { echo "ERROR: issue-comment fetch failed; check the PR number and gh auth" >&2; exit 1; }
 jq -r '.[] | "ISSUE [\(.id)] by \(.user.login):\n\(.body)\n"' "${scratch_dir}/issue-comments.json" || { echo "ERROR: issue-comment render failed; check jq and the JSON payload" >&2; exit 1; }
 
+# Check-run annotations (Xcode Cloud, App Store Connect, compiler and linter notices)
+gh api "/repos/{owner}/{repo}/commits/<triage_sha>/check-runs" > "${scratch_dir:?}/check-runs.json" || { echo "ERROR: check-runs fetch failed; check the triage SHA and gh auth" >&2; exit 1; }
+jq -c '.check_runs[]? | select((.annotations_count // 0) > 0) | {id: .id, name: .name}' "${scratch_dir}/check-runs.json" 2>/dev/null | while read -r cr; do
+  [ -n "$cr" ] || continue
+  c_id="$(printf '%s' "$cr" | jq -r .id)"
+  c_name="$(printf '%s' "$cr" | jq -r .name)"
+  [ -n "$c_id" ] && [ "$c_id" != "null" ] || continue
+  gh api "/repos/{owner}/{repo}/check-runs/${c_id}/annotations" > "${scratch_dir:?}/ann_${c_id}.json" 2>/dev/null || continue
+  jq -r --arg name "$c_name" '.[] | "ANNOTATION [\(.annotation_level // "notice")] \(.path):\(.start_line // .line // 0) by \($name):\n\(.message)\n"' "${scratch_dir}/ann_${c_id}.json" 2>/dev/null || true
+done
+
 trap - EXIT
 [ -n "${_prev_exit_trap:-}" ] && trap "${_prev_exit_trap:-}" EXIT || true
 rm -rf "${scratch_dir:?}"
@@ -209,14 +222,15 @@ when it is installed alongside this one
 against the titles above plus every shared learnings file that exists (see
 section 3).
 
-Address every review source on the PR: human comments plus all bot
-reviews (Antigravity comment reviews, Copilot, and any other review
-app posting here). Treat bot feedback as unverified until checked
-against the *current* worktree code: a bot often flags logic that was
-already refactored or is already handled. Document each false positive
-with its technical reasoning plus the command and output that disproves
-it, so the next reader need not re-derive the check, instead of
-changing code to silence it.
+Address every review source on the PR: human comments, bot reviews
+(Antigravity comment reviews, Copilot, and any other review app posting
+here), and CI check-run annotations (Xcode Cloud, App Store Connect,
+compiler or linter notices). Treat bot feedback and check-run annotations as
+unverified until checked against the *current* worktree code: an annotation or
+bot often flags logic that was already refactored or is already handled.
+Document each false positive with its technical reasoning plus the command
+and output that disproves it, so the next reader need not re-derive the check,
+instead of changing code to silence it.
 
 Classify each comment:
 - **Actionable Fix**: a valid defect or improvement. Plan and apply the fix.
