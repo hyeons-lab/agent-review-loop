@@ -1338,6 +1338,44 @@ else
   pass=$((pass+1))
 fi
 
+echo "--- 18. prc check-run annotations filter ---"
+check "prc check-runs annotations_count: output nested" grep -q -F '.output.annotations_count' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
+cat > "${LOG_DIR}/check-runs-sample.json" <<'EOF'
+{
+  "total_count": 3,
+  "check_runs": [
+    {
+      "id": 101,
+      "name": "lint-job",
+      "annotations_count": null,
+      "output": {
+        "annotations_count": 2
+      }
+    },
+    {
+      "id": 102,
+      "name": "test-job",
+      "annotations_count": null,
+      "output": {
+        "annotations_count": 0
+      }
+    },
+    {
+      "id": 103,
+      "name": "build-job",
+      "annotations_count": null,
+      "output": null
+    }
+  ]
+}
+EOF
+prc_jq_expr="$(grep -o -E "jq -c '\.check_runs\[\]\?[^']+'" "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" || true)"
+eval "${prc_jq_expr} \"${LOG_DIR}/check-runs-sample.json\"" > "${LOG_DIR}/check-runs-sample.out" 2>"${LOG_DIR}/check-runs-sample.err" || true
+check "prc check-runs filter extracts positive count" grep -q '{"id":101,"name":"lint-job"}' "${LOG_DIR}/check-runs-sample.out"
+check "prc check-runs filter ignores zero count" test -z "$(grep '102' "${LOG_DIR}/check-runs-sample.out" || true)"
+check "prc check-runs filter ignores null count" test -z "$(grep '103' "${LOG_DIR}/check-runs-sample.out" || true)"
+
 echo
 echo "RESULT: ${pass} passed, ${fail} failed"
 test "${fail}" = "0"
+
