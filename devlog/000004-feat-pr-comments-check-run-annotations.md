@@ -1,6 +1,6 @@
 # 000004: Check-run annotations in agent-review-pr-comments
 
-**Status:** in progress (branch `feat/pr-comments-check-run-annotations`)
+**Status:** PR submitted (PR #7, branch `feat/pr-comments-check-run-annotations`)
 **Intent:** Retrieve check-run annotations (such as Xcode Cloud, App Store Connect, compiler diagnostics, and linter notices) in addition to review comments and issue comments, so inline feedback surfaced on the GitHub diff tab is triaged and addressed.
 
 ## Decisions
@@ -25,3 +25,5 @@
 
 - `./tests/verify-install.sh`: 956 passed, 0 failed.
 - Checked ASCII compliance: pure ASCII, zero em dashes.
+- `./install.sh --all --no-refinements`: installed across `~/.agents`, `~/.config/muse`, `~/.claude`, `~/.codex`, and `~/.gemini`.
+- PR opened: https://github.com/hyeons-lab/agent-review-loop/pull/7.
