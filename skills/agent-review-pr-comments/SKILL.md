@@ -211,7 +211,7 @@ snapshot_sha=$(gh pr view "$pr_number" --json headRefOid --jq .headRefOid) || { 
 
 # Check-run annotations (Xcode Cloud, App Store Connect, compiler and linter notices)
 gh api "/repos/{owner}/{repo}/commits/<triage_sha>/check-runs" > "${scratch_dir:?}/check-runs.json" || { echo "ERROR: check-runs fetch failed; check the triage SHA and gh auth" >&2; exit 1; }
-jq -c '.check_runs[]? | select((.annotations_count // 0) > 0) | {id: .id, name: .name}' "${scratch_dir}/check-runs.json" 2>/dev/null | while read -r cr; do
+jq -c '.check_runs[]? | select((.output.annotations_count // .annotations_count // 0) > 0) | {id: .id, name: .name}' "${scratch_dir}/check-runs.json" 2>/dev/null | while read -r cr; do
   [ -n "$cr" ] || continue
   c_id="$(printf '%s' "$cr" | jq -r .id)"
   c_name="$(printf '%s' "$cr" | jq -r .name)"
