@@ -18,7 +18,7 @@ the pr-comments structure.
   bootstrap span (section 1A), failure triage by class (1B),
   diagnose-fix-validate loop (2), thematic synthesis protocol (3),
   commit/push/CI management (4), persisted summary (5).
-- 9 fenced bash blocks (1A, logs/rerun, backup, commit, stack push,
+- 10 fenced bash blocks (1A, logs, rerun, backup, commit, stack push,
   plain push, cancel runs, poll, run list), all `bash -n` clean with
   quoted placeholders.
 - 4 single-quoted paste sites with escape notes (pr input, git add,
@@ -41,7 +41,7 @@ the pr-comments structure.
 
 ## Verification
 
-- `./tests/verify-install.sh`: 1096 passed, 0 failed (baseline and
+- `./tests/verify-install.sh`: passed with 0 failures (baseline and
   varied-alphabet hostile TMPDIR identically); shellcheck and ASCII
   gates clean.
 - Golden regenerated via `--regen-golden` (exactly the 7 to 8 line).
@@ -57,9 +57,9 @@ the pr-comments structure.
 - First live run caught a defect in the skill's own section 1A:
   `gh pr checks --json name,bucket,workflowName` is rejected by gh
   2.95.0 (`Unknown JSON field: "workflowName"`; the field is
-  `workflow`), failing the whole snapshot fetch. Fixed lines 175-176
-  (`workflowName` to `workflow` in both the `--json` list and the jq
-  selector); no other skill or test references the wrong name.
-- Verification: fixed lines run verbatim (rc 0); suite still 1096
-  passed, 0 failed; lesson merged into canonical Pillar 1
+  `workflow`), failing the whole snapshot fetch. Fixed by changing
+  `workflowName` to `workflow` in both the `--json` list and the jq
+  selector; no other skill or test references the wrong name.
+- Verification: fixed lines run verbatim (rc 0); suite still passed
+  with 0 failures; lesson merged into canonical Pillar 1
   (Installed Binary Grammar Verification).

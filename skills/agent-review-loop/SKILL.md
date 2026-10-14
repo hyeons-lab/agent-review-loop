@@ -889,8 +889,9 @@ Follow this exact sequence whenever filing learnings:
      backup_snapshot=""
      if [ -f "$target" ]; then
        mkdir -p "$backup_dir" || { echo "ERROR: failed to create backup directory: $backup_dir" >&2; exit 1; }
-       backup_snapshot="$backup_dir/review-refinements-$(date "+%Y%m%d-%H%M%S").md"
-       cp -p "$target" "$backup_snapshot" || { echo "ERROR: failed to snapshot $target to $backup_snapshot" >&2; exit 1; }
+       backup_tmp="$(mktemp "$backup_dir/.review-refinements-backup.XXXXXX")" || { echo "ERROR: failed to stage snapshot for $target" >&2; exit 1; }
+       backup_snapshot="$backup_dir/review-refinements-$(date "+%Y%m%d-%H%M%S")-$$-${backup_tmp##*.}.md"
+       cp -p "$target" "$backup_tmp" && mv -f "$backup_tmp" "$backup_snapshot" || { rm -f "$backup_tmp"; echo "ERROR: failed to snapshot $target to $backup_snapshot" >&2; exit 1; }
      fi
      ```
    - Check if backups accumulate: if `[ -d "$backup_dir" ]`, count the backup files in `"$backup_dir"`

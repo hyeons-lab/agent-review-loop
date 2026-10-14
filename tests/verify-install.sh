@@ -239,6 +239,10 @@ else
   fail=$((fail+1))
 fi
 
+for s in ${SKILLS}; do
+  check "skill named in README: $s" grep -q -F "$s" "${BUNDLE}/README.md"
+done
+
 echo "--- 9. upgrade refreshes skills, keeps learnings, skips missing ---"
 fresh_fake
 check "initial install for upgrade" run_install "${LOG_DIR}/rfl-run9a.log" --claude
@@ -365,7 +369,7 @@ for s in ${SKILLS}; do
     agent-review-loop) want_snippets=3;;
     agent-review-report) want_snippets=5;;
     agent-review-pr-comments) want_snippets=9;;
-    agent-review-check-ci) want_snippets=9;;
+    agent-review-check-ci) want_snippets=10;;
   esac
   check "skill snippets pinned: $s" test "$block" -eq "$want_snippets"
 done
@@ -552,8 +556,11 @@ check "pr input quoted: prc" grep -q -F "gh pr view '<pr_input>'" "${BUNDLE}/ski
 check "pr input quoted: report" grep -q -F "gh pr view '<pr_input>'" "${BUNDLE}/skills/agent-review-report/SKILL.md"
 check "git add quoted: prc" grep -q -F "git add -- '<file1>' '<file2>'" "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
 check "git push quoted: prc" grep -q -F "git push -u origin 'HEAD:refs/heads/<type>/<branch-name>'" "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
-check "pr url quoted: prc" test "$(grep -c -F 'gh api "/repos/{owner}/{repo}/' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md")" = "3"
-check "pr number quoted: prc" test "$(grep -c -F 'gh pr view "<pr_number>"' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md")" = "2"
+check "pr url quoted: prc" test "$(grep -c -F 'gh api --paginate "/repos/{owner}/{repo}/' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md")" = "3"
+check "pr number quoted: prc" test "$(grep -c -F 'gh pr view "<pr_number>"' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md")" = "6"
+check "prc omitted counts open PRs" grep -q -F 'expected exactly one open PR for the current branch' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
+check "cci cancel bound disclosed" grep -q -F 'newest 100 runs' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "prc cancel bound disclosed" grep -q -F 'newest 100 runs' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
 check "pr checks quoted: prc" grep -q -F 'gh pr checks "<pr_number>"' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
 check "pr comment quoted: report" grep -q -F 'gh pr comment "<pr_number>"' "${BUNDLE}/skills/agent-review-report/SKILL.md"
 check "pr numeric posix: report" grep -q -F 'case "$pr_number" in ""|*[!0-9]*)' "${BUNDLE}/skills/agent-review-report/SKILL.md"
@@ -657,9 +664,23 @@ check "cci trap warns outside bash" grep -q -F 'cannot chain prior EXIT trap out
 check "pr input quoted: cci" grep -q -F "gh pr view '<pr_input>'" "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
 check "git add quoted: cci" grep -q -F "git add -- '<file1>' '<file2>'" "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
 check "git push quoted: cci" grep -q -F "git push -u origin 'HEAD:refs/heads/<type>/<branch-name>'" "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
-check "cci cancel lists via encoded branch" grep -q -F 'gh api --paginate --method GET "/repos/{owner}/{repo}/actions/runs" -f branch="$branch"' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
-check "pr number quoted: cci" test "$(grep -c -F 'gh pr view "<pr_number>"' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" || true)" = "2"
+check "cci cancel lists via encoded branch" grep -q -F 'gh api --method GET "/repos/{owner}/{repo}/actions/runs" -f branch="$branch"' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "cci cancel single page" test -z "$(grep -F 'actions/runs' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" | grep -F -- '--paginate' || true)"
+check "prc cancel single page" test -z "$(grep -F 'actions/runs' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" | grep -F -- '--paginate' || true)"
+check "pr number quoted: cci" test "$(grep -c -F 'gh pr view "<pr_number>"' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" || true)" = "6"
 check "pr checks quoted: cci" grep -q -F 'gh pr checks "<pr_number>"' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "cci checks captured not fatal" grep -q -F 'checks_out=$(gh pr checks "$pr_number"' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "cci snapshot runs by triage commit" grep -q -F 'gh run list --commit "$triage_sha" --limit 100' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "cci omitted counts open PRs" grep -q -F 'expected exactly one open PR for the current branch' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "prc comment fetch paginates" grep -q -F 'gh api --paginate "/repos/{owner}/{repo}/pulls/$pr_number/comments"' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
+check "prc review fetch paginates" grep -q -F 'gh api --paginate "/repos/{owner}/{repo}/pulls/$pr_number/reviews"' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
+check "prc issue fetch paginates" grep -q -F 'gh api --paginate "/repos/{owner}/{repo}/issues/$pr_number/comments"' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
+check "cci snapshot sha bound" grep -q -F 'snapshot_sha=$(gh pr view "$pr_number"' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "cci omitted input contract" grep -q -F 'open exactly one PR for the current branch' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "cci rerun warns and continues" grep -q -F 'WARNING: rerun failed for <run-id>; continuing' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "cci poll timeout warns" grep -q -F 'checks still pending for PR <pr_number> after 30 polls' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "cci cancel pages bounded" grep -q -F -- '-F per_page=100' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "prc cancel pages bounded" grep -q -F -- '-F per_page=100' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
 check "cci end rm guarded" test -z "$(grep -F 'rm -rf "${scratch_dir}"' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" || true)"
 check "scratch redirects guarded: cci" test "$(grep -c -F '> "${scratch_dir:?}/' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" || true)" = "2"
 check "toplevel echo count: cci" test "$(grep -c -F 'echo "toplevel=' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" || true)" = "1"
@@ -680,6 +701,385 @@ printf 'set -u\n. "$RW_LD/cleanup-fn.sh"\nunset fail LOG_DIR TEST_DIR\n(exit 3)\
 run_split cleanup-unset env "RW_LD=${LOG_DIR}" bash "${LOG_DIR}/cleanup-run.sh"
 check "cleanup runs unset under set -u" test "$(cat "${LOG_DIR}/split-cleanup-unset.rc")" = "0"
 check "cleanup unset reports failure" grep -q "Verification failed (exit code 3, 0 failure(s)). Retaining diagnostic logs in: unknown" "${LOG_DIR}/split-cleanup-unset.out"
+
+sed -n '/# Check snapshot plus branch run list/,/snapshot_sha.*triage_sha/p' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" > "${LOG_DIR}/cci-checks.sh" || true
+check "cci checks block extracted" grep -q -F 'checks_out=$(gh pr checks' "${LOG_DIR}/cci-checks.sh"
+check "cci checks json fields exact" grep -q -F 'gh pr checks "$pr_number" --json name,bucket,workflow' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "cci checks workflow selector exact" grep -q -F '(.workflow // "external")' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+mkdir -p "${TEST_DIR}/stubbin-cci-checks"
+cat > "${TEST_DIR}/stubbin-cci-checks/gh" <<'EOF'
+#!/bin/sh
+case "$1 $2" in
+"pr checks")
+  json_fields=""; prev=""; for a in "$@"; do if [ "$prev" = "--json" ]; then json_fields="$a"; fi; prev="$a"; done
+  [ "$json_fields" = "name,bucket,workflow" ] || { echo "Unknown JSON field in: $json_fields" >&2; exit 1; }
+  case "$STUB_MODE" in
+    pass|manyruns) printf '[{"name":"build","bucket":"pass","workflow":"CI"}]\n'; exit 0;;
+    fail) printf '[{"name":"build","bucket":"fail","workflow":"CI"}]\n'; exit 1;;
+    pending) printf '[{"name":"build","bucket":"pending","workflow":"CI"}]\n'; exit 8;;
+    empty) echo "no checks reported on the 'feat/test' branch" >&2; exit 1;;
+    invalid) printf 'not-json\n'; exit 1;;
+    shape) printf '[{"name":"build"}]\n'; exit 0;;
+    emptyerr) echo 'authentication required' >&2; exit 1;;
+  esac;;
+"run list")
+  if [ "$STUB_MODE" = "manyruns" ]; then
+    printf '['; i=1; while [ $i -le 100 ]; do if [ $i -gt 1 ]; then printf ','; fi; printf '{"databaseId":%s,"conclusion":"success","name":"build","status":"completed","headSha":"%s"}' "$i" "$STUB_SHA"; i=$((i+1)); done; printf ']\n'; exit 0
+  fi
+  printf '[{"databaseId":1,"conclusion":"success","name":"build","status":"completed","headSha":"%s"},{"databaseId":2,"conclusion":"failure","name":"other","status":"completed","headSha":"1111111111111111111111111111111111111111"}]\n' "$STUB_SHA"; exit 0;;
+"pr view") printf '%s\n' "${STUB_VIEW_SHA:-$STUB_SHA}"; exit 0;;
+*) exit 1;;
+esac
+EOF
+chmod +x "${TEST_DIR}/stubbin-cci-checks/gh"
+cat > "${LOG_DIR}/cci-checks-run.sh" <<'EOF'
+set -u
+scratch_dir="$RW_TD/cci-checks-$STUB_MODE"; mkdir -p "$scratch_dir"
+pr_number=6; triage_sha="$STUB_SHA"; branch='feat/test'
+. "$RW_LD/cci-checks.sh"
+printf 'CHECKS=%s\n' "$(cat "$scratch_dir/checks.json")"
+EOF
+stub_sha="deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+for mode in pass fail pending empty; do
+  run_split "cci-checks-$mode" env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" "STUB_MODE=$mode" "STUB_SHA=$stub_sha" PATH="${TEST_DIR}/stubbin-cci-checks:${PATH}" bash "${LOG_DIR}/cci-checks-run.sh"
+  check "cci checks $mode rc" test "$(cat "${LOG_DIR}/split-cci-checks-$mode.rc")" = "0"
+done
+check "cci checks pass payload kept" grep -q '"bucket":"pass"' "${LOG_DIR}/split-cci-checks-pass.out"
+check "cci checks pass renders workflow" grep -q 'pass: build \[CI\]' "${LOG_DIR}/split-cci-checks-pass.out"
+check "cci checks fail payload kept" grep -q '"bucket":"fail"' "${LOG_DIR}/split-cci-checks-fail.out"
+check "cci checks pending payload kept" grep -q '"bucket":"pending"' "${LOG_DIR}/split-cci-checks-pending.out"
+check "cci checks empty becomes array" grep -q 'CHECKS=\[\]' "${LOG_DIR}/split-cci-checks-empty.out"
+check "cci checks empty names no-ci" grep -q 'no checks reported for PR 6; report no CI' "${LOG_DIR}/split-cci-checks-empty.err"
+check "cci checks runs bound to triage sha" grep -q '#1 @ deadbee' "${LOG_DIR}/split-cci-checks-pass.out"
+check "cci checks foreign sha run filtered" test -z "$(grep '#2 @' "${LOG_DIR}/split-cci-checks-pass.out" || true)"
+for mode in shape emptyerr invalid; do
+  run_split "cci-checks-$mode" env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" "STUB_MODE=$mode" "STUB_SHA=$stub_sha" PATH="${TEST_DIR}/stubbin-cci-checks:${PATH}" bash "${LOG_DIR}/cci-checks-run.sh"
+  check "cci checks $mode rc" test "$(cat "${LOG_DIR}/split-cci-checks-$mode.rc")" = "1"
+done
+check "cci checks emptyerr named" grep -q 'checks fetch failed' "${LOG_DIR}/split-cci-checks-emptyerr.err"
+run_split cci-checks-drift env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" "STUB_MODE=pass" "STUB_SHA=$stub_sha" "STUB_VIEW_SHA=1111111111111111111111111111111111111111" PATH="${TEST_DIR}/stubbin-cci-checks:${PATH}" bash "${LOG_DIR}/cci-checks-run.sh"
+check "cci checks drift rc" test "$(cat "${LOG_DIR}/split-cci-checks-drift.rc")" = "1"
+check "cci checks drift named" grep -q 'PR head moved during snapshot' "${LOG_DIR}/split-cci-checks-drift.err"
+
+awk '/^   ```$/{if (f) exit} /poll_sha_start=/{f=1} f' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" > "${LOG_DIR}/poll-cci.txt" || true
+awk '/^   ```$/{if (f) exit} /poll_sha_start=/{f=1} f' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" > "${LOG_DIR}/poll-prc.txt" || true
+check "poll span extracted: cci" test -s "${LOG_DIR}/poll-cci.txt"
+check "poll span extracted: prc" test -s "${LOG_DIR}/poll-prc.txt"
+check "cci/prc poll spans identical" cmp -s "${LOG_DIR}/poll-cci.txt" "${LOG_DIR}/poll-prc.txt"
+awk '/^   ```$/{if (f) exit} /snap=.*gh pr view/{f=1} f' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" > "${LOG_DIR}/cancel-cci.txt" || true
+awk '/^   ```$/{if (f) exit} /snap=.*gh pr view/{f=1} f' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" > "${LOG_DIR}/cancel-prc.txt" || true
+check "cancel span extracted: cci" test -s "${LOG_DIR}/cancel-cci.txt"
+check "cancel span extracted: prc" test -s "${LOG_DIR}/cancel-prc.txt"
+check "cci/prc cancel spans identical" cmp -s "${LOG_DIR}/cancel-cci.txt" "${LOG_DIR}/cancel-prc.txt"
+for s in agent-review-loop agent-review-report agent-review-pr-comments agent-review-check-ci; do
+  check "filing bullet template: $s" grep -q -F -- '- **Title**: Trigger condition' "${BUNDLE}/skills/$s/SKILL.md"
+  check "filing attribution ban: $s" grep -q -F 'Zero attribution: no signatures' "${BUNDLE}/skills/$s/SKILL.md"
+  check "filing heading verify: $s" grep -q -F "must equal 8" "${BUNDLE}/skills/$s/SKILL.md"
+done
+for s in agent-review-loop agent-review-report agent-review-pr-comments agent-review-check-ci; do
+  sed -n '/backup_tmp=/,/failed to snapshot/p' "${BUNDLE}/skills/$s/SKILL.md" > "${LOG_DIR}/backup-$s.txt" || true
+  check "backup unique shape: $s" grep -q -F -- '-$$-${backup_tmp##*.}' "${BUNDLE}/skills/$s/SKILL.md"
+done
+check "backup spans identical: report" cmp -s "${LOG_DIR}/backup-agent-review-check-ci.txt" "${LOG_DIR}/backup-agent-review-report.txt"
+check "backup spans identical: pr-comments" cmp -s "${LOG_DIR}/backup-agent-review-check-ci.txt" "${LOG_DIR}/backup-agent-review-pr-comments.txt"
+check "backup spans identical: loop" cmp -s "${LOG_DIR}/backup-agent-review-check-ci.txt" "${LOG_DIR}/backup-agent-review-loop.txt"
+mkdir -p "${TEST_DIR}/stubbin-poll"
+cat > "${TEST_DIR}/stubbin-poll/gh" <<'EOF'
+#!/bin/sh
+case "$1 $2" in
+"pr view")
+  case "$*" in
+    *statusCheckRollup*)
+      jqexpr=""; prev=""
+      for a in "$@"; do if [ "$prev" = "--jq" ]; then jqexpr="$a"; fi; prev="$a"; done
+      printf '{"statusCheckRollup":[]}' | jq -r "${jqexpr:-length}"
+      exit 0;;
+  esac
+  printf 'x\n' >> "$STUB_VIEWS"
+  if [ "${STUB_FAIL_OPEN:-0}" = "1" ] && [ "$(wc -l < "$STUB_VIEWS" | tr -d ' ')" = "1" ]; then exit 1; fi
+  if [ "${STUB_FAIL_CLOSE:-0}" = "1" ] && [ "$(wc -l < "$STUB_VIEWS" | tr -d ' ')" -gt 1 ]; then exit 1; fi
+  if [ "${STUB_DRIFT:-0}" = "1" ] && [ "$(wc -l < "$STUB_VIEWS" | tr -d ' ')" -gt 1 ]; then printf '%s\n' "$STUB_SHA2"; else printf '%s\n' "$STUB_SHA"; fi
+  exit 0;;
+"pr checks")
+  printf 'x\n' >> "$STUB_COUNT"
+  case "$STUB_MODE" in
+    empty) echo "no checks reported on the 'feat/test' branch" >&2; exit 1;;
+    garbage) printf 'not-json\n'; exit 1;;
+    shape) printf '["x"]\n'; exit 0;;
+    elem) printf '[{"name":"build"}]\n'; exit 0;;
+    vanish) n=$(wc -l < "$STUB_COUNT" | tr -d ' '); if [ "$n" -le 29 ]; then printf '[{"name":"build","bucket":"pending"}]\n'; exit 8; fi; exit 1;;
+    vanish3) n=$(wc -l < "$STUB_COUNT" | tr -d ' '); if [ "$n" -le 2 ]; then printf '[{"name":"build","bucket":"pending"}]\n'; exit 8; fi; exit 1;;
+    mixpending) n=$(wc -l < "$STUB_COUNT" | tr -d ' '); case $((n % 4)) in 2|3) printf '[]\n'; exit 0;; *) printf '[{"name":"build","bucket":"pending"}]\n'; exit 8;; esac;;
+    mixfetch) n=$(wc -l < "$STUB_COUNT" | tr -d ' '); case "$n" in 1|3|4) printf '[]\n'; exit 0;; 2) printf 'not-json\n'; exit 1;; *) printf '[{"name":"build","bucket":"pass"}]\n'; exit 1;; esac;;
+    pending) printf '[{"name":"build","bucket":"pending"}]\n'; exit 8;;
+    settle)
+      n=$(wc -l < "$STUB_COUNT")
+      if [ "$n" -lt 2 ]; then printf '[{"name":"build","bucket":"pending"}]\n'; exit 8; fi
+      printf '[{"name":"build","bucket":"pass"}]\n'; exit 1;;
+  esac;;
+*) exit 1;;
+esac
+EOF
+printf '#!/bin/sh\nexit 0\n' > "${TEST_DIR}/stubbin-poll/sleep"
+chmod +x "${TEST_DIR}/stubbin-poll/gh" "${TEST_DIR}/stubbin-poll/sleep"
+cat > "${LOG_DIR}/poll-run.sh" <<'EOF'
+set -u
+pr_number=6; run_root="$RW_TD"
+STUB_VIEWS="${STUB_VIEWS:-$RW_TD/poll-views}"; export STUB_VIEWS
+: > "$STUB_COUNT"; : > "$STUB_VIEWS"
+. "${RW_SPAN:-$RW_LD/poll-cci.txt}"
+printf 'CALLS=%s\n' "$(wc -l < "$STUB_COUNT" | tr -d ' ')"
+EOF
+for mode in empty settle pending; do
+  run_split "poll-$mode" env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" "STUB_MODE=$mode" "STUB_SHA=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" "STUB_COUNT=${TEST_DIR}/poll-count-$mode" PATH="${TEST_DIR}/stubbin-poll:${PATH}" bash "${LOG_DIR}/poll-run.sh"
+  check "poll $mode rc" test "$(cat "${LOG_DIR}/split-poll-$mode.rc")" = "0"
+done
+check "poll empty breaks at three" grep -qx 'CALLS=3' "${LOG_DIR}/split-poll-empty.out"
+check "poll empty names no-checks" grep -q 'reporting no-checks outcome' "${LOG_DIR}/split-poll-empty.err"
+check "poll done settles pass" grep -q '"bucket":"pass"' "${LOG_DIR}/split-poll-settle.out"
+check "poll pending times out marked" grep -q 'still pending' "${LOG_DIR}/split-poll-pending.err"
+check "poll pending used all rounds" grep -q 'CALLS=30' "${LOG_DIR}/split-poll-pending.out"
+grep -F 'gh run rerun "<run-id>" --failed' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" > "${LOG_DIR}/rerun-line.sh" || true
+cat > "${LOG_DIR}/rerun-run.sh" <<'EOF'
+set -u
+. "$RW_LD/rerun-line.sh"
+echo CONTINUED
+EOF
+mkdir -p "${TEST_DIR}/stubbin-rerun"
+printf '#!/bin/sh\nexit 1\n' > "${TEST_DIR}/stubbin-rerun/gh"
+chmod +x "${TEST_DIR}/stubbin-rerun/gh"
+run_split poll-rerun env "RW_LD=${LOG_DIR}" PATH="${TEST_DIR}/stubbin-rerun:${PATH}" bash "${LOG_DIR}/rerun-run.sh"
+check "rerun failure continues rc" test "$(cat "${LOG_DIR}/split-poll-rerun.rc")" = "0"
+check "rerun failure warns" grep -q 'WARNING: rerun failed' "${LOG_DIR}/split-poll-rerun.err"
+check "rerun failure reaches next step" grep -q 'CONTINUED' "${LOG_DIR}/split-poll-rerun.out"
+sed -n '/backup_dir=/,/^     fi$/p' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" > "${LOG_DIR}/backup-block.sh" || true
+cat > "${LOG_DIR}/backup-run.sh" <<'EOF'
+set -u
+target="$RW_TD/snap-target.md"
+printf 'v1\n' > "$target"
+. "$RW_LD/backup-block.sh"
+printf 'v2\n' > "$target"
+. "$RW_LD/backup-block.sh"
+ls "$RW_TD/backups"/review-refinements-*.md | wc -l | tr -d ' '
+grep -l '^v1$' "$RW_TD/backups"/review-refinements-*.md | wc -l | tr -d ' '
+grep -l '^v2$' "$RW_TD/backups"/review-refinements-*.md | wc -l | tr -d ' '
+EOF
+run_split backup-double env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" bash "${LOG_DIR}/backup-run.sh"
+check "backup double rc" test "$(cat "${LOG_DIR}/split-backup-double.rc")" = "0"
+check "backup double output" test "$(cat "${LOG_DIR}/split-backup-double.out")" = "$(printf '2\n1\n1')"
+check "poll empty warns once" test "$(grep -c 'no checks reported for PR' "${LOG_DIR}/split-poll-empty.err")" = "1"
+run_split poll-drift env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" "STUB_MODE=settle" "STUB_DRIFT=1" "STUB_SHA=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" "STUB_SHA2=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "STUB_COUNT=${TEST_DIR}/poll-count-drift" "STUB_VIEWS=${TEST_DIR}/poll-views-drift" PATH="${TEST_DIR}/stubbin-poll:${PATH}" bash "${LOG_DIR}/poll-run.sh"
+check "poll drift rc" test "$(cat "${LOG_DIR}/split-poll-drift.rc")" = "0"
+check "poll drift warns" grep -q 'PR head moved during poll' "${LOG_DIR}/split-poll-drift.err"
+run_split poll-garbage env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" "STUB_MODE=garbage" "STUB_SHA=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" "STUB_COUNT=${TEST_DIR}/poll-count-garbage" "STUB_VIEWS=${TEST_DIR}/poll-views-garbage" PATH="${TEST_DIR}/stubbin-poll:${PATH}" bash "${LOG_DIR}/poll-run.sh"
+check "poll garbage terminal names parse" grep -q 'payload unparseable after 30 polls' "${LOG_DIR}/split-poll-garbage.err"
+check "snapshot truncation warned" grep -q -F 'run list truncated at 100 runs' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "cci fallback by tip commit" grep -q -F 'gh run list --commit "$tip"' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "prc fallback by tip commit" grep -q -F 'gh run list --commit "$tip"' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
+check "cci fallback tip validated" grep -q -F 'empty tip SHA; refusing fallback run list' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "prc fallback tip validated" grep -q -F 'empty tip SHA; refusing fallback run list' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
+grep '^### Pillar' "${BUNDLE}/skills/agent-review-loop/thematic-review-pillars.md" > "${LOG_DIR}/pillar-titles.txt" || true
+for s in agent-review-loop agent-review-report agent-review-pr-comments agent-review-check-ci; do
+  grep -o '### Pillar [0-9]: [^`]*' "${BUNDLE}/skills/$s/SKILL.md" > "${LOG_DIR}/titles-$s.txt" || true
+  check "pillar titles canonical: $s" cmp -s "${LOG_DIR}/pillar-titles.txt" "${LOG_DIR}/titles-$s.txt"
+done
+for s in agent-review-loop agent-review-report agent-review-pr-comments agent-review-check-ci; do
+  check "filing prune consent: $s" grep -q -F 'Never prune or delete' "${BUNDLE}/skills/$s/SKILL.md"
+  check "filing backup keep-five: $s" grep -q -F 'keeping the latest 5' "${BUNDLE}/skills/$s/SKILL.md"
+  check "readme contents entry: $s" grep -q -F "skills/$s/SKILL.md" "${BUNDLE}/README.md"
+  check "readme uninstall entry: $s" grep -q -F "muse/skills/$s" "${BUNDLE}/README.md"
+done
+awk '/tip=\$\(gh pr view/{f=1} f; f&&/^   ```$/{exit}' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" > "${LOG_DIR}/fallback-cci.txt" || true
+awk '/tip=\$\(gh pr view/{f=1} f; f&&/^   ```$/{exit}' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" > "${LOG_DIR}/fallback-prc.txt" || true
+check "fallback span extracted: cci" test -s "${LOG_DIR}/fallback-cci.txt"
+check "fallback span extracted: prc" test -s "${LOG_DIR}/fallback-prc.txt"
+check "cci/prc fallback spans identical" cmp -s "${LOG_DIR}/fallback-cci.txt" "${LOG_DIR}/fallback-prc.txt"
+check "prc fetch counts line" grep -q -F '"$inline_count" "$reviews_count" "$issue_count"' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
+check "prc inline count slurps diff file" grep -q -F 'inline_count=$(jq -s' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
+grep -F 'count=$(jq -s' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" > "${LOG_DIR}/prc-counts.sh" || true
+grep -F "printf 'fetched counts:" "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" >> "${LOG_DIR}/prc-counts.sh" || true
+check "prc counts block extracted" test "$(wc -l < "${LOG_DIR}/prc-counts.sh" | tr -d ' ')" = "4"
+mkdir -p "${TEST_DIR}/prc-counts"
+printf '[{},{}][{}]' > "${TEST_DIR}/prc-counts/diff-comments.json"
+printf '[{}]' > "${TEST_DIR}/prc-counts/reviews.json"
+printf '[][][{},{}]' > "${TEST_DIR}/prc-counts/issue-comments.json"
+cat > "${LOG_DIR}/prc-counts-run.sh" <<'EOF'
+set -u
+scratch_dir="$RW_TD/prc-counts"
+. "$RW_LD/prc-counts.sh"
+EOF
+run_split prc-counts env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" bash "${LOG_DIR}/prc-counts-run.sh"
+check "prc counts rc" test "$(cat "${LOG_DIR}/split-prc-counts.rc")" = "0"
+check "prc counts sum paginated pages" test "$(cat "${LOG_DIR}/split-prc-counts.out")" = "fetched counts: inline=3 reviews=1 issue=2"
+check "prc counts slurp totals x3" test "$(grep -c 'map(length) | add // 0' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" || true)" = "3"
+mkdir -p "${TEST_DIR}/prc-counts-empty"
+: > "${TEST_DIR}/prc-counts-empty/diff-comments.json"
+: > "${TEST_DIR}/prc-counts-empty/reviews.json"
+: > "${TEST_DIR}/prc-counts-empty/issue-comments.json"
+cat > "${LOG_DIR}/prc-counts-empty-run.sh" <<'EOF'
+set -u
+scratch_dir="$RW_TD/prc-counts-empty"
+. "$RW_LD/prc-counts.sh"
+EOF
+run_split prc-counts-empty env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" bash "${LOG_DIR}/prc-counts-empty-run.sh"
+check "prc counts empty rc" test "$(cat "${LOG_DIR}/split-prc-counts-empty.rc")" = "0"
+check "prc counts empty are zero" test "$(cat "${LOG_DIR}/split-prc-counts-empty.out")" = "fetched counts: inline=0 reviews=0 issue=0"
+check "prc gh stack prerequisite" grep -q -F 'the `gh stack` extension must also be installed' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
+sed -n '/# Inline diff comments/,/re-run to re-triage/p' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" > "${LOG_DIR}/prc-fetch.sh" || true
+check "prc fetch span extracted" grep -q -F 'PR head moved during comment fetch' "${LOG_DIR}/prc-fetch.sh"
+mkdir -p "${TEST_DIR}/stubbin-prc-fetch"
+cat > "${TEST_DIR}/stubbin-prc-fetch/gh" <<'EOF'
+#!/bin/sh
+if [ "$1" = "api" ]; then
+  case "$3" in
+    *pulls*reviews*) printf '[{"id":2,"state":"COMMENTED","user":{"login":"bot"},"body":"review body"}]\n';;
+    *pulls*) printf '[{"id":1,"path":"a.md","line":3,"user":{"login":"bot"},"body":"diff body"}]\n';;
+    *issues*) printf '[{"id":3,"user":{"login":"bot"},"body":"issue body"}]\n';;
+    *) exit 1;;
+  esac
+  exit 0
+fi
+if [ "$1 $2" = "pr view" ]; then printf '%s\n' "${STUB_VIEW_SHA:?}"; exit 0; fi
+exit 1
+EOF
+chmod +x "${TEST_DIR}/stubbin-prc-fetch/gh"
+cat > "${LOG_DIR}/prc-fetch-run.sh" <<'EOF'
+set -u
+scratch_dir="$RW_TD/prc-fetch-run"; mkdir -p "$scratch_dir"
+pr_number=6; triage_sha="$STUB_SHA"
+. "$RW_LD/prc-fetch.sh"
+EOF
+run_split prc-fetch-match env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" "STUB_SHA=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" "STUB_VIEW_SHA=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" PATH="${TEST_DIR}/stubbin-prc-fetch:${PATH}" bash "${LOG_DIR}/prc-fetch-run.sh"
+check "prc fetch match rc" test "$(cat "${LOG_DIR}/split-prc-fetch-match.rc")" = "0"
+check "prc fetch match counts" grep -q 'fetched counts: inline=1 reviews=1 issue=1' "${LOG_DIR}/split-prc-fetch-match.out"
+run_split prc-fetch-drift env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" "STUB_SHA=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" "STUB_VIEW_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" PATH="${TEST_DIR}/stubbin-prc-fetch:${PATH}" bash "${LOG_DIR}/prc-fetch-run.sh"
+check "prc fetch drift rc" test "$(cat "${LOG_DIR}/split-prc-fetch-drift.rc")" = "1"
+check "prc fetch drift named" grep -q 'PR head moved during comment fetch' "${LOG_DIR}/split-prc-fetch-drift.err"
+check "prc snapshot rebinds head" grep -q -F 'PR head moved during comment fetch (triage $triage_sha, now $snapshot_sha); re-run to re-triage' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
+run_split poll-shape env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" "STUB_MODE=shape" "STUB_SHA=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" "STUB_COUNT=${TEST_DIR}/poll-count-shape" "STUB_VIEWS=${TEST_DIR}/poll-views-shape" PATH="${TEST_DIR}/stubbin-poll:${PATH}" bash "${LOG_DIR}/poll-run.sh"
+check "poll shape terminal names parse" grep -q 'payload unparseable after 30 polls' "${LOG_DIR}/split-poll-shape.err"
+run_split poll-elem env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" "STUB_MODE=elem" "STUB_SHA=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" "STUB_COUNT=${TEST_DIR}/poll-count-elem" "STUB_VIEWS=${TEST_DIR}/poll-views-elem" PATH="${TEST_DIR}/stubbin-poll:${PATH}" bash "${LOG_DIR}/poll-run.sh"
+check "poll elem terminal names parse" grep -q 'payload unparseable after 30 polls' "${LOG_DIR}/split-poll-elem.err"
+run_split poll-vanish env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" "STUB_MODE=vanish" "STUB_SHA=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" "STUB_COUNT=${TEST_DIR}/poll-count-vanish" "STUB_VIEWS=${TEST_DIR}/poll-views-vanish" PATH="${TEST_DIR}/stubbin-poll:${PATH}" bash "${LOG_DIR}/poll-run.sh"
+check "poll vanish names disappeared" grep -q 'checks disappeared on the final poll' "${LOG_DIR}/split-poll-vanish.err"
+run_split poll-vanish3 env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" "STUB_MODE=vanish3" "STUB_SHA=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" "STUB_COUNT=${TEST_DIR}/poll-count-vanish3" "STUB_VIEWS=${TEST_DIR}/poll-views-vanish3" PATH="${TEST_DIR}/stubbin-poll:${PATH}" bash "${LOG_DIR}/poll-run.sh"
+check "poll vanish early names disappeared" grep -q 'checks disappeared for PR' "${LOG_DIR}/split-poll-vanish3.err"
+check "poll vanish early not no-checks" test -z "$(grep 'no-checks outcome' "${LOG_DIR}/split-poll-vanish3.err" || true)"
+run_split poll-mixpending env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" "STUB_MODE=mixpending" "STUB_SHA=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" "STUB_COUNT=${TEST_DIR}/poll-count-mixpending" "STUB_VIEWS=${TEST_DIR}/poll-views-mixpending" PATH="${TEST_DIR}/stubbin-poll:${PATH}" bash "${LOG_DIR}/poll-run.sh"
+check "poll mixed pending no early break" grep -qx 'CALLS=30' "${LOG_DIR}/split-poll-mixpending.out"
+check "poll mixed pending not no-checks" test -z "$(grep 'no-checks outcome' "${LOG_DIR}/split-poll-mixpending.err" || true)"
+run_split poll-mixfetch env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" "STUB_MODE=mixfetch" "STUB_SHA=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" "STUB_COUNT=${TEST_DIR}/poll-count-mixfetch" "STUB_VIEWS=${TEST_DIR}/poll-views-mixfetch" PATH="${TEST_DIR}/stubbin-poll:${PATH}" bash "${LOG_DIR}/poll-run.sh"
+check "poll mixed fetch settles pass" grep -q '"bucket":"pass"' "${LOG_DIR}/split-poll-mixfetch.out"
+check "poll mixed fetch not no-checks" test -z "$(grep 'no-checks outcome' "${LOG_DIR}/split-poll-mixfetch.err" || true)"
+run_split poll-failopen env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" "STUB_MODE=settle" "STUB_FAIL_OPEN=1" "STUB_SHA=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" "STUB_COUNT=${TEST_DIR}/poll-count-failopen" "STUB_VIEWS=${TEST_DIR}/poll-views-failopen" PATH="${TEST_DIR}/stubbin-poll:${PATH}" bash "${LOG_DIR}/poll-run.sh"
+check "poll open failure unattributed" grep -q 'settled checks are unattributed (opening head unreadable)' "${LOG_DIR}/split-poll-failopen.err"
+run_split cci-checks-manyruns env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" "STUB_MODE=manyruns" "STUB_SHA=$stub_sha" PATH="${TEST_DIR}/stubbin-cci-checks:${PATH}" bash "${LOG_DIR}/cci-checks-run.sh"
+check "cci checks manyruns warns truncated" grep -q 'run list truncated at 100 runs' "${LOG_DIR}/split-cci-checks-manyruns.err"
+run_split poll-failclose env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" "STUB_MODE=settle" "STUB_FAIL_CLOSE=1" "STUB_SHA=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" "STUB_COUNT=${TEST_DIR}/poll-count-failclose" "STUB_VIEWS=${TEST_DIR}/poll-views-failclose" PATH="${TEST_DIR}/stubbin-poll:${PATH}" bash "${LOG_DIR}/poll-run.sh"
+check "poll closing failure inconclusive" grep -q 'closing head read failed; reporting inconclusive' "${LOG_DIR}/split-poll-failclose.err"
+mkdir -p "${TEST_DIR}/stubbin-cancel"
+cat > "${TEST_DIR}/stubbin-cancel/gh" <<'EOF'
+#!/bin/sh
+case "$1 $2" in
+"pr view")
+  case "$*" in
+    *@tsv*) printf 'feat/test\t%s\n' "$STUB_OLD";;
+    *) printf '%s\n' "$STUB_NEW";;
+  esac
+  exit 0;;
+"api --method")
+  jqexpr=""; prev=""
+  for a in "$@"; do if [ "$prev" = "--jq" ]; then jqexpr="$a"; fi; prev="$a"; done
+  printf '{"workflow_runs":[{"id":1,"head_sha":"%s","status":"in_progress"},{"id":2,"head_sha":"%s","status":"in_progress"},{"id":3,"head_sha":"%s","status":"completed"},{"id":4,"head_sha":"%s","status":"queued"},{"id":5,"head_sha":"%s","status":"waiting"}]}' "$STUB_OLD" "$STUB_NEW" "$STUB_OLD" "$STUB_OLD" "$STUB_OLD" | jq -r "$jqexpr"
+  exit 0;;
+"run cancel") printf '%s\n' "$3" >> "$STUB_CANCELLED"; exit 0;;
+*) exit 1;;
+esac
+EOF
+chmod +x "${TEST_DIR}/stubbin-cancel/gh"
+cat > "${LOG_DIR}/cancel-run.sh" <<'EOF'
+set -u
+: > "$STUB_CANCELLED"
+. "$RW_SPAN"
+EOF
+for s in cci prc; do
+  run_split "cancel-$s" env "RW_SPAN=${LOG_DIR}/cancel-$s.txt" "STUB_OLD=old111" "STUB_NEW=new222" "STUB_CANCELLED=${TEST_DIR}/cancelled-$s" PATH="${TEST_DIR}/stubbin-cancel:${PATH}" bash "${LOG_DIR}/cancel-run.sh"
+  check "cancel $s rc" test "$(cat "${LOG_DIR}/split-cancel-$s.rc")" = "0"
+  check "cancel $s cancels superseded" grep -q '^1$' "${TEST_DIR}/cancelled-$s"
+  check "cancel $s spares fresh tip" test -z "$(grep '^2$' "${TEST_DIR}/cancelled-$s" || true)"
+  check "cancel $s spares completed" test -z "$(grep '^3$' "${TEST_DIR}/cancelled-$s" || true)"
+  check "cancel $s cancels queued" grep -qx '4' "${TEST_DIR}/cancelled-$s"
+  check "cancel $s cancels waiting" grep -qx '5' "${TEST_DIR}/cancelled-$s"
+done
+sed -n '/# Resolve once/,/^printf .number:/p' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" | sed "s/'<pr_input>'/''/" > "${LOG_DIR}/prc-resolve-omit.sh" || true
+check "prc resolve omit extracted" grep -q 'open_count=' "${LOG_DIR}/prc-resolve-omit.sh"
+mkdir -p "${TEST_DIR}/stubbin-prc-resolve"
+cat > "${TEST_DIR}/stubbin-prc-resolve/gh" <<'EOF'
+#!/bin/sh
+json_fields=""; jq_expr=""; prev=""
+for a in "$@"; do case "$prev" in --json) json_fields="$a";; --jq) jq_expr="$a";; esac; prev="$a"; done
+case "$1 $2" in
+"pr list")
+  [ "$json_fields" = "number" ] || { echo "Unknown JSON field: $json_fields" >&2; exit 1; }
+  [ "$jq_expr" = "length" ] || { echo "expected --jq length, got: $jq_expr" >&2; exit 1; }
+  { printf '['; i=0; while [ "$i" -lt "${STUB_OPEN:-0}" ]; do if [ "$i" -gt 0 ]; then printf ','; fi; printf '{"number":6}'; i=$((i+1)); done; printf ']'; } | jq -r "$jq_expr"
+  exit 0;;
+"pr view")
+  [ "$json_fields" = "number,headRefOid" ] || { echo "Unknown JSON field: $json_fields" >&2; exit 1; }
+  printf '{"number":6,"headRefOid":"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"}\n'; exit 0;;
+*) exit 1;;
+esac
+EOF
+printf '#!/bin/sh\nprintf "feat/test\\n"\n' > "${TEST_DIR}/stubbin-prc-resolve/git"
+chmod +x "${TEST_DIR}/stubbin-prc-resolve/gh" "${TEST_DIR}/stubbin-prc-resolve/git"
+cat > "${LOG_DIR}/prc-resolve-run.sh" <<'EOF'
+set -u
+. "$RW_LD/prc-resolve-omit.sh"
+EOF
+for n in 0 1 2; do
+  run_split "prc-resolve-$n" env "RW_LD=${LOG_DIR}" "STUB_OPEN=$n" PATH="${TEST_DIR}/stubbin-prc-resolve:${PATH}" bash "${LOG_DIR}/prc-resolve-run.sh"
+done
+check "prc resolve zero refuses" test "$(cat "${LOG_DIR}/split-prc-resolve-0.rc")" = "1"
+check "prc resolve one resolves" test "$(cat "${LOG_DIR}/split-prc-resolve-1.rc")" = "0"
+check "prc resolve two refuses" test "$(cat "${LOG_DIR}/split-prc-resolve-2.rc")" = "1"
+run_split poll-prc-empty env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" "RW_SPAN=${LOG_DIR}/poll-prc.txt" "STUB_MODE=empty" "STUB_SHA=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" "STUB_COUNT=${TEST_DIR}/poll-count-prc" "STUB_VIEWS=${TEST_DIR}/poll-views-prc" PATH="${TEST_DIR}/stubbin-poll:${PATH}" bash "${LOG_DIR}/poll-run.sh"
+check "poll prc span executes" grep -q 'reporting no-checks outcome' "${LOG_DIR}/split-poll-prc-empty.err"
+sed -n '/# Resolve once/,/^printf .number:/p' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md" | sed "s/'<pr_input>'/''/" > "${LOG_DIR}/resolve-omit.sh" || true
+check "resolve omit extracted" grep -q 'open_count=' "${LOG_DIR}/resolve-omit.sh"
+mkdir -p "${TEST_DIR}/stubbin-resolve"
+cat > "${TEST_DIR}/stubbin-resolve/gh" <<'EOF'
+#!/bin/sh
+json_fields=""; jq_expr=""; prev=""
+for a in "$@"; do case "$prev" in --json) json_fields="$a";; --jq) jq_expr="$a";; esac; prev="$a"; done
+case "$1 $2" in
+"pr list")
+  [ "$json_fields" = "number" ] || { echo "Unknown JSON field: $json_fields" >&2; exit 1; }
+  [ "$jq_expr" = "length" ] || { echo "expected --jq length, got: $jq_expr" >&2; exit 1; }
+  { printf '['; i=0; while [ "$i" -lt "${STUB_OPEN:-0}" ]; do if [ "$i" -gt 0 ]; then printf ','; fi; printf '{"number":6}'; i=$((i+1)); done; printf ']'; } | jq -r "$jq_expr"
+  exit 0;;
+"pr view")
+  [ "$json_fields" = "number,headRefOid,headRefName" ] || { echo "Unknown JSON field: $json_fields" >&2; exit 1; }
+  printf '{"number":6,"headRefOid":"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef","headRefName":"feat/test"}\n'; exit 0;;
+*) exit 1;;
+esac
+EOF
+printf '#!/bin/sh\nprintf "feat/test\\n"\n' > "${TEST_DIR}/stubbin-resolve/git"
+chmod +x "${TEST_DIR}/stubbin-resolve/gh" "${TEST_DIR}/stubbin-resolve/git"
+cat > "${LOG_DIR}/resolve-run.sh" <<'EOF'
+set -u
+. "$RW_LD/resolve-omit.sh"
+EOF
+for n in 0 1 2; do
+  run_split "resolve-$n" env "RW_LD=${LOG_DIR}" "STUB_OPEN=$n" PATH="${TEST_DIR}/stubbin-resolve:${PATH}" bash "${LOG_DIR}/resolve-run.sh"
+done
+check "resolve zero refuses" test "$(cat "${LOG_DIR}/split-resolve-0.rc")" = "1"
+check "resolve zero names count" grep -q 'expected exactly one open PR' "${LOG_DIR}/split-resolve-0.err"
+check "resolve one resolves" test "$(cat "${LOG_DIR}/split-resolve-1.rc")" = "0"
+check "resolve one prints number" grep -q 'number: 6' "${LOG_DIR}/split-resolve-1.out"
+check "resolve two refuses" test "$(cat "${LOG_DIR}/split-resolve-2.rc")" = "1"
+run_split cci-checks-invalid env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" "STUB_MODE=invalid" "STUB_SHA=$stub_sha" PATH="${TEST_DIR}/stubbin-cci-checks:${PATH}" bash "${LOG_DIR}/cci-checks-run.sh"
+check "cci checks invalid rc" test "$(cat "${LOG_DIR}/split-cci-checks-invalid.rc")" = "1"
+check "cci checks invalid names fetch" grep -q 'checks fetch failed' "${LOG_DIR}/split-cci-checks-invalid.err"
 
 echo "--- 14. regen guards refuse bad trees ---"
 regen_bundle() { # regen_bundle <tag>: fresh mini-bundle copy under TEST_DIR/regen-<tag>, prints its path
@@ -1358,6 +1758,29 @@ awk '/^trap - EXIT$/{f=1} f{print} f&&/rm -rf "/{exit}' "${BUNDLE}/skills/agent-
 check "cci setup extracted" grep -q -F 'mktemp -d "$run_root/check-ci' "${LOG_DIR}/cci-setup.sh"
 check "cci setup has trap" grep -q "^trap '" "${LOG_DIR}/cci-setup.sh"
 check "cci end extracted" grep -q -F 'trap - EXIT' "${LOG_DIR}/cci-end.sh"
+cat > "${LOG_DIR}/cci-t1.sh" <<'EOF'
+set -u
+run_root="$RW_TD/ccit1"; mkdir -p "$run_root"; toplevel="$RW_TD"
+. "$RW_LD/cci-setup.sh" >/dev/null
+touch "$rounds_dir/partial.json"
+exit 1
+EOF
+run_split cci-t1 env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" bash "${LOG_DIR}/cci-t1.sh"
+check "cci trap failure rc" test "$(cat "${LOG_DIR}/split-cci-t1.rc")" = "1"
+check "cci trap removes scratch on failure" test -z "$(ls -d "${TEST_DIR}"/ccit1/check-ci.?????? 2>/dev/null || true)"
+check "cci trap removes partial rounds" test -z "$(ls "${TEST_DIR}"/ccit1/check-ci-rounds/*/partial.json 2>/dev/null || true)"
+cat > "${LOG_DIR}/cci-t2.sh" <<'EOF'
+set -u
+run_root="$RW_TD/ccit2"; mkdir -p "$run_root"; toplevel="$RW_TD"
+rm -f "$RW_TD/prior-fired-cci"
+trap "touch \"\$RW_TD/prior-fired-cci\"" EXIT
+. "$RW_LD/cci-setup.sh" >/dev/null
+exit 3
+EOF
+run_split cci-t2 env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" bash "${LOG_DIR}/cci-t2.sh"
+check "cci trap failure rc preserved" test "$(cat "${LOG_DIR}/split-cci-t2.rc")" = "3"
+check "cci trap chains prior" test -f "${TEST_DIR}/prior-fired-cci"
+check "cci trap removes scratch with prior" test -z "$(ls -d "${TEST_DIR}"/ccit2/check-ci.?????? 2>/dev/null || true)"
 cat > "${LOG_DIR}/cci-t3.sh" <<'EOF'
 set -u
 run_root="$RW_TD/ccit3"; mkdir -p "$run_root"; toplevel="$RW_TD"
@@ -1375,6 +1798,7 @@ check "cci trap keeps rounds on success" grep -q "ROUNDS_KEPT=yes" "${LOG_DIR}/s
 check "cci trap removes scratch on success" grep -q "SCRATCH_GONE=yes" "${LOG_DIR}/split-cci-t3.out"
 check "cci trap restores prior" grep -q "trap -- 'echo prior' EXIT" "${LOG_DIR}/split-cci-t3.out"
 check "cci setup stdout is contract-only" test "$(grep -c -E '^(scratch_dir|rounds_dir|toplevel)=' "${TEST_DIR}/ccit3-setup.out" || true)" = "3"
+check "cci setup stdout line count" test "$(grep -c '' "${TEST_DIR}/ccit3-setup.out" || true)" = "3"
 check "cci setup rounds re-attaches" test -d "$(grep '^rounds_dir=' "${TEST_DIR}/ccit3-setup.out" | cut -d= -f2- || true)"
 {
   echo '_prev_trap_line="trap -- '"'"'unclosed"'

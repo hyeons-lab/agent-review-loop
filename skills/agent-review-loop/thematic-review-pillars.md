@@ -3,7 +3,8 @@
 This document defines the **8 Core Thematic Pillars** (the defaults) and the
 **self-improvement protocol** shared by every review loop that files
 learnings into the refinements file (`agent-review-loop`,
-`agent-review-report`, and `agent-review-pr-comments`).
+`agent-review-report`, `agent-review-pr-comments`, and
+`agent-review-check-ci`).
 
 It travels with the skill and stays stable. Automated learning never edits
 this file; it writes to the Tier 2 file instead.
@@ -119,7 +120,9 @@ When a review loop learns a recurring pattern worth keeping:
    editing in the exact same turn as the write.
 2. **Automatic timestamped backup**: before modifying the file, record the
    snapshot path (`"$backup_snapshot"`) and create a timestamped snapshot in
-   `"$backup_dir"` (`review-refinements-YYYYMMDD-HHMMSS.md`) if `$target`
+   `"$backup_dir"` (`review-refinements-YYYYMMDD-HHMMSS-<pid>-<mktemp-suffix>.md`,
+   where the suffix is the random component of the staged mktemp file,
+   so two snapshots in the same second never collide) if `$target`
    exists on disk. If `[ -d "$backup_dir" ]` contains more than 5 backups,
    ask the user in chat whether they would like to prune older backups
    (keeping the latest 5).

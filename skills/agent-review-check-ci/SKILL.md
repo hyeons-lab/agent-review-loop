@@ -54,18 +54,22 @@ flowchart TD
 
 ## Prerequisites
 
-`gh` and `jq` must be on `PATH`. When they are installed but not found
+`gh` and `jq` must be on `PATH`. For the stacked PR push path in
+section 4, the `gh stack` extension must also be installed; plain-branch
+pushes need only `gh`. When they are installed but not found
 (for example a macOS Homebrew install outside the inherited `PATH`),
 prefix the commands below with
 `export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"` (Apple Silicon,
 then Intel Mac; Linuxbrew users add `$(brew --prefix)/bin` instead).
 
-The skill takes a target PR number or URL (`<pr_input>`; paste it inside the single quotes, escaping an embedded single quote as `'\''`). When omitted,
-use the open PR for the current branch and stop when there is not
-exactly one. Run in a checkout of the PR's repository (or its worktree):
+The skill takes a target PR number or URL (`<pr_input>`; paste it inside the single quotes, escaping an embedded single quote as `'\''`).
+Run in a checkout of the PR's repository (or its worktree):
 `gh` fills `{owner}` and `{repo}` in API paths from that checkout.
-Section 1A resolves the input to a number once; use that number for
-`<pr_number>` in every later snippet. If the work lives in a git
+Section 1A resolves the input once into the `pr_number`, `triage_sha`,
+and `branch` shell variables; later snippets use those variables (prose
+`<pr_number>` means the resolved numeric value). When the input is
+omitted, section 1A resolves the open PR for the current branch and
+stops when it is not exactly one. If the work lives in a git
 worktree, `cd` into the INNERMOST worktree containing the files under
 review first and run every fenced block below unmodified; never sprinkle
 `-C` inside the mirrored span (a partial rewrite splits state: in normal
@@ -92,7 +96,20 @@ list, then print the triage values for the summary:
 unset GIT_DIR GIT_WORK_TREE GIT_EXTERNAL_DIFF GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
 cfg_n="${GIT_CONFIG_COUNT:-0}"; unset GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS; cfg_i=0; while [ "$cfg_i" -lt "$cfg_n" ] 2>/dev/null && [ "$cfg_i" -lt 128 ]; do unset "GIT_CONFIG_KEY_$cfg_i" "GIT_CONFIG_VALUE_$cfg_i"; cfg_i=$((cfg_i+1)); done; unset cfg_n cfg_i
 # Resolve once: canonical number plus the triage SHA and branch for the summary
-gh pr view '<pr_input>' --json number,headRefOid,headRefName --jq '"number: \(.number)", "triage_sha: \(.headRefOid)", "branch: \(.headRefName)"' || { echo "ERROR: PR resolve failed; check the number or URL and gh auth" >&2; exit 1; }
+if [ -n '<pr_input>' ]; then
+  resolve_json=$(gh pr view '<pr_input>' --json number,headRefOid,headRefName) || { echo "ERROR: PR resolve failed; check the number or URL and gh auth" >&2; exit 1; }
+else
+  open_count=$(gh pr list --head "$(git rev-parse --abbrev-ref HEAD)" --state open --json number --jq 'length') || { echo "ERROR: PR resolve failed; pass a PR number or URL" >&2; exit 1; }
+  [ "$open_count" = "1" ] || { echo "ERROR: expected exactly one open PR for the current branch, found $open_count; pass a PR number or URL" >&2; exit 1; }
+  resolve_json=$(gh pr view --json number,headRefOid,headRefName) || { echo "ERROR: PR resolve failed; pass a PR number or URL or open exactly one PR for the current branch" >&2; exit 1; }
+fi
+pr_number=$(printf '%s' "$resolve_json" | jq -r .number) || { echo "ERROR: PR resolve failed; check jq and the JSON payload" >&2; exit 1; }
+triage_sha=$(printf '%s' "$resolve_json" | jq -r .headRefOid) || { echo "ERROR: PR resolve failed; check jq and the JSON payload" >&2; exit 1; }
+branch=$(printf '%s' "$resolve_json" | jq -r .headRefName) || { echo "ERROR: PR resolve failed; check jq and the JSON payload" >&2; exit 1; }
+case "$pr_number" in ""|*[!0-9]*) echo "ERROR: resolved PR number is non-numeric: $pr_number" >&2; exit 1;; esac
+[ -n "$triage_sha" ] && [ "$triage_sha" != "null" ] || { echo "ERROR: triage SHA missing for PR $pr_number; aborting" >&2; exit 1; }
+[ -n "$branch" ] && [ "$branch" != "null" ] || { echo "ERROR: branch missing for PR $pr_number; aborting" >&2; exit 1; }
+printf 'number: %s\ntriage_sha: %s\nbranch: %s\n' "$pr_number" "$triage_sha" "$branch"
 
 # Mirror: 8 run-root bootstraps stay identical (modulo indentation, reaper pattern).
 unset GIT_DIR GIT_WORK_TREE GIT_EXTERNAL_DIFF GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
@@ -172,10 +189,19 @@ echo "rounds_dir=$rounds_dir"
 echo "toplevel=${toplevel:-}"
 
 # Check snapshot plus branch run list for the triage SHA
-gh pr checks "<pr_number>" --json name,bucket,workflow > "${scratch_dir:?}/checks.json" || { echo "ERROR: checks fetch failed; check the PR number and gh auth" >&2; exit 1; }
+checks_rc=0
+checks_out=$(gh pr checks "$pr_number" --json name,bucket,workflow 2>"${scratch_dir:?}/checks.err") || checks_rc=$?
+if [ -z "$checks_out" ] && grep -q "no checks reported" "${scratch_dir}/checks.err"; then checks_out="[]"; echo "no checks reported for PR $pr_number; report no CI for this PR instead of entering the fix loop" >&2; fi
+[ -n "$checks_out" ] || { echo "ERROR: checks fetch failed (gh rc $checks_rc); check the PR number and gh auth" >&2; exit 1; }
+printf '%s' "$checks_out" | jq -e 'type == "array" and all(.[]; type == "object" and (.bucket | type == "string") and (.name | type == "string"))' >/dev/null || { echo "ERROR: checks fetch failed (gh rc $checks_rc); check the PR number and gh auth" >&2; exit 1; }
+printf '%s' "$checks_out" > "${scratch_dir:?}/checks.json"
 jq -r '.[] | "\(.bucket): \(.name) [\(.workflow // "external")]"' "${scratch_dir}/checks.json" || { echo "ERROR: checks render failed; check jq and the JSON payload" >&2; exit 1; }
-gh run list --branch "<branch>" --limit 20 --json databaseId,conclusion,name,status,headSha > "${scratch_dir:?}/runs.json" || { echo "ERROR: run list fetch failed; check the branch and gh auth" >&2; exit 1; }
-jq -r '.[] | "\(.status)/\(.conclusion // "none"): \(.name) #\(.databaseId) @ \(.headSha[0:7])"' "${scratch_dir}/runs.json" || { echo "ERROR: run list render failed; check jq and the JSON payload" >&2; exit 1; }
+gh run list --commit "$triage_sha" --limit 100 --json databaseId,conclusion,name,status,headSha > "${scratch_dir:?}/runs.json" || { echo "ERROR: run list fetch failed; check the branch and gh auth" >&2; exit 1; }
+jq -r --arg sha "$triage_sha" '.[] | select(.headSha == $sha) | "\(.status)/\(.conclusion // "none"): \(.name) #\(.databaseId) @ \(.headSha[0:7])"' "${scratch_dir}/runs.json" || { echo "ERROR: run list render failed; check jq and the JSON payload" >&2; exit 1; }
+run_count=$(jq 'length' "${scratch_dir}/runs.json") || { echo "ERROR: run count failed; check jq and the JSON payload" >&2; exit 1; }
+if [ "$run_count" -ge 100 ]; then echo "WARNING: run list truncated at 100 runs for $triage_sha; triage may omit runs" >&2; fi
+snapshot_sha=$(gh pr view "$pr_number" --json headRefOid --jq .headRefOid) || { echo "ERROR: snapshot SHA re-read failed; refusing to attribute checks" >&2; exit 1; }
+[ "$snapshot_sha" = "$triage_sha" ] || { echo "ERROR: PR head moved during snapshot (triage $triage_sha, now $snapshot_sha); re-run to re-triage" >&2; exit 1; }
 
 trap - EXIT
 [ -n "${_prev_exit_trap:-}" ] && trap "${_prev_exit_trap:-}" EXIT || true
@@ -231,8 +257,11 @@ that disproves branch blame, instead of changing code to silence it.
    of each red run, then rerun once when the failure smells flaky or
    environmental before changing code:
    ```bash
-   gh run view "<run-id>" --log-failed || { echo "ERROR: log fetch failed; check the run id and gh auth" >&2; exit 1; }
-   gh run rerun "<run-id>" --failed || { echo "ERROR: rerun failed; rerun manually or continue to a code fix" >&2; exit 1; }
+   gh run view "<run-id>" --log-failed || echo "WARNING: log fetch failed for <run-id> (expired, in progress, or non-Actions); continuing to local reproduction" >&2
+   ```
+   Rerun once, and only for a suspected flake or infra failure:
+   ```bash
+   gh run rerun "<run-id>" --failed || echo "WARNING: rerun failed for <run-id>; continuing to local reproduction and code fix" >&2
    ```
    Rerun only when the log shows intermittence (timeout, connection
    reset, runner lost, cache poison) or the same job passes on retry
@@ -317,8 +346,9 @@ When updating the target refinements file, follow this protocol strictly:
      backup_snapshot=""
      if [ -f "$target" ]; then
        mkdir -p "$backup_dir" || { echo "ERROR: failed to create backup directory: $backup_dir" >&2; exit 1; }
-       backup_snapshot="$backup_dir/review-refinements-$(date "+%Y%m%d-%H%M%S").md"
-       cp -p "$target" "$backup_snapshot" || { echo "ERROR: failed to snapshot $target to $backup_snapshot" >&2; exit 1; }
+       backup_tmp="$(mktemp "$backup_dir/.review-refinements-backup.XXXXXX")" || { echo "ERROR: failed to stage snapshot for $target" >&2; exit 1; }
+       backup_snapshot="$backup_dir/review-refinements-$(date "+%Y%m%d-%H%M%S")-$$-${backup_tmp##*.}.md"
+       cp -p "$target" "$backup_tmp" && mv -f "$backup_tmp" "$backup_snapshot" || { rm -f "$backup_tmp"; echo "ERROR: failed to snapshot $target to $backup_snapshot" >&2; exit 1; }
      fi
      ```
    - Check if backups accumulate: if `[ -d "$backup_dir" ]`, count the backup files in `"$backup_dir"`
@@ -415,7 +445,7 @@ When updating the target refinements file, follow this protocol strictly:
    snap=$(gh pr view "<pr_number>" --json headRefName,headRefOid --jq '[.headRefName, .headRefOid] | @tsv') || { echo "ERROR: gh pr view failed; refusing to cancel" >&2; exit 1; }
    read -r branch tip <<<"$snap"
    if [ -z "$branch" ] || [ -z "$tip" ] || [ "$branch" = "null" ] || [ "$tip" = "null" ]; then echo "ERROR: no branch or tip SHA; refusing to cancel" >&2; exit 1; fi
-   runs=$(gh api --paginate --method GET "/repos/{owner}/{repo}/actions/runs" -f branch="$branch" --jq '.workflow_runs[] | select(.status != "completed") | "\(.id) \(.head_sha)"') || { echo "ERROR: run listing failed; leaving runs uncancelled" >&2; exit 1; }
+   runs=$(gh api --method GET "/repos/{owner}/{repo}/actions/runs" -f branch="$branch" --jq '.workflow_runs[] | select(.status != "completed") | "\(.id) \(.head_sha)"' -F per_page=100) || { echo "ERROR: run listing failed; leaving runs uncancelled" >&2; exit 1; }
    tip_now=$(gh pr view "<pr_number>" --json headRefOid --jq .headRefOid) || { echo "ERROR: tip re-read failed; refusing to cancel" >&2; exit 1; }
    if [ -z "$tip_now" ] || [ "$tip_now" = "null" ]; then echo "ERROR: empty tip SHA on re-read; refusing to cancel" >&2; exit 1; fi
    if [ -n "$runs" ]; then
@@ -430,25 +460,78 @@ When updating the target refinements file, follow this protocol strictly:
    travels as an encoded API parameter (never interpolated into the URL),
    unfinished runs of every status are listed (gated runs leak past a
    queued-only filter), and the tip is re-read after listing so a
-   concurrent push's fresh runs are never cancelled.
+   concurrent push's fresh runs are never cancelled. The listing
+   reads the newest 100 runs on the branch; on a branch with more
+   unfinished runs than that, older superseded runs can remain
+   uncancelled and keep consuming CI until a later pass.
 4. **Verify CI.** Poll bounded until checks settle (at most 30 rounds,
    60 seconds apart; a timeout counts as inconclusive and is reported as
    such), then read the status column:
    ```bash
+   poll_sha_start=$(gh pr view "<pr_number>" --json headRefOid --jq .headRefOid 2>/dev/null) || poll_sha_start=""
+   if [ -z "$poll_sha_start" ]; then echo "WARNING: opening head read failed; settled checks will be unattributed" >&2; fi
+   settle="wait"; empty_polls=0; last_out=""; empty_reported=0; last_kind="none"; seen_nonempty=0
    for i in $(seq 1 30); do
-     out=$(gh pr checks "<pr_number>" --json name,bucket); rc=$?
-     if [ $rc -ne 0 ] && ! echo "$out" | jq -e . >/dev/null 2>&1; then echo "WARNING: checks fetch failed (attempt $i of 30); retrying"; sleep 60; continue; fi
-     printf '%s\n' "$out"
-     settle=$(echo "$out" | jq -r 'if length == 0 or any(.[].bucket; . == "pending") then "wait" else "done" end') || { echo "WARNING: checks parse failed (attempt $i of 30); retrying"; sleep 60; continue; }
+     rc=0; out=$(gh pr checks "<pr_number>" --json name,bucket) || rc=$?
+     if [ -z "$out" ]; then
+       rollup=$(gh pr view "<pr_number>" --json statusCheckRollup --jq '.statusCheckRollup | length' 2>/dev/null) || rollup=""
+       if [ "$rollup" = "0" ]; then out="[]"; fi
+     fi
+     if [ -z "$out" ]; then echo "WARNING: checks fetch failed (attempt $i of 30, gh rc $rc); retrying" >&2; last_kind="fetch"; empty_polls=0; if [ "$i" -lt 30 ]; then sleep 60; fi; continue; fi
+     if ! printf '%s' "$out" | jq -e . >/dev/null 2>&1; then echo "WARNING: checks parse failed (attempt $i of 30, gh rc $rc); retrying" >&2; last_kind="parse"; empty_polls=0; if [ "$i" -lt 30 ]; then sleep 60; fi; continue; fi
+     if ! printf '%s' "$out" | jq -e 'type == "array" and all(.[]; type == "object" and (.bucket | type == "string") and (.name | type == "string"))' >/dev/null 2>&1; then echo "WARNING: checks shape invalid (attempt $i of 30); retrying" >&2; last_kind="parse"; empty_polls=0; if [ "$i" -lt 30 ]; then sleep 60; fi; continue; fi
+     new_settle=$(printf '%s' "$out" | jq -r 'if length == 0 then "empty" elif any(.[].bucket; . == "pending") then "wait" else "done" end') || { echo "WARNING: checks parse failed (attempt $i of 30); retrying" >&2; last_kind="parse"; empty_polls=0; if [ "$i" -lt 30 ]; then sleep 60; fi; continue; }
+     settle="$new_settle"
+     if [ "$settle" != "empty" ]; then seen_nonempty=1; fi
+     case "$settle" in
+       empty) last_kind="empty";;
+       wait) last_kind="pending";;
+       done) last_kind="done";;
+     esac
+     if [ "$settle" = "empty" ]; then
+       empty_polls=$((empty_polls+1))
+       if [ "$empty_polls" -ge 3 ]; then
+         if [ "${seen_nonempty:-0}" = "1" ]; then echo "WARNING: checks disappeared for PR <pr_number> after $empty_polls consecutive empty polls; reporting inconclusive" >&2; else echo "WARNING: no checks reported for PR <pr_number> after $empty_polls consecutive empty polls; reporting no-checks outcome" >&2; fi
+         empty_reported=1; break
+       fi
+     else
+       empty_polls=0
+     fi
+     if [ "$out" != "$last_out" ] || [ "$settle" = "done" ]; then printf '%s\n' "$out"; last_out="$out"; fi
      [ "$settle" = "done" ] && break
      if [ "$i" -lt 30 ]; then sleep 60; fi
    done
+   case "$last_kind" in
+     done)
+       if [ -z "$poll_sha_start" ]; then
+         echo "WARNING: settled checks are unattributed (opening head unreadable); reporting inconclusive" >&2
+       else
+         poll_sha_end=$(gh pr view "<pr_number>" --json headRefOid --jq .headRefOid 2>/dev/null) || poll_sha_end=""
+         if [ -n "$poll_sha_end" ] && [ "$poll_sha_start" != "$poll_sha_end" ]; then echo "WARNING: PR head moved during poll ($poll_sha_start -> $poll_sha_end); reporting inconclusive; re-poll bound to the new head" >&2; fi
+         if [ -z "$poll_sha_end" ]; then echo "WARNING: closing head read failed; reporting inconclusive" >&2; fi
+       fi;;
+     empty)
+       if [ "${empty_reported:-0}" != "1" ]; then
+         if [ "${seen_nonempty:-0}" = "1" ]; then echo "WARNING: checks disappeared on the final poll for PR <pr_number>; reporting inconclusive" >&2; else echo "WARNING: no checks reported for PR <pr_number> after 30 polls; reporting inconclusive" >&2; fi
+       fi;;
+     pending) echo "WARNING: checks still pending for PR <pr_number> after 30 polls; reporting inconclusive" >&2;;
+     fetch) echo "WARNING: checks fetch failed after 30 polls for PR <pr_number>; reporting inconclusive" >&2;;
+     parse) echo "WARNING: checks payload unparseable after 30 polls for PR <pr_number>; reporting inconclusive" >&2;;
+     *) echo "WARNING: checks poll ended without a settled payload for PR <pr_number>; reporting inconclusive" >&2;;
+   esac
    ```
    `gh pr checks --watch` **exits 0 even when checks fail**, so never
    trust its exit code. Read the status column, or:
    ```bash
-   gh run list --branch <branch> --json conclusion,name,status
+   tip=$(gh pr view "<pr_number>" --json headRefOid --jq .headRefOid) || { echo "ERROR: tip read failed; refusing fallback run list" >&2; exit 1; }
+   if [ -z "$tip" ] || [ "$tip" = "null" ]; then echo "ERROR: empty tip SHA; refusing fallback run list" >&2; exit 1; fi
+   fallback_runs=$(gh run list --commit "$tip" --limit 100 --json conclusion,name,status,headSha) || { echo "ERROR: fallback run list failed; check gh auth" >&2; exit 1; }
+   printf '%s\n' "$fallback_runs"
+   fallback_count=$(printf '%s' "$fallback_runs" | jq 'length') || { echo "ERROR: fallback run count failed; check jq and the JSON payload" >&2; exit 1; }
+   if [ "$fallback_count" -ge 100 ]; then echo "WARNING: fallback run list truncated at 100 runs for $tip; oldest runs omitted" >&2; fi
    ```
+   The fallback fetches runs for the re-read tip commit directly, so a
+   crowded branch window cannot crowd out the tip.
    If a check is red, first check whether `main` is red too before
    blaming the branch. Run at most 3 fix cycles per invocation (each
    pass through fetch, fix, and push is one cycle); if the cap is reached
