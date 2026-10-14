@@ -1,4 +1,4 @@
-# 000004: Check-run annotations in agent-review-pr-comments
+# 000005: Check-run annotations in agent-review-pr-comments
 
 **Status:** PR submitted (PR #7, branch `feat/pr-comments-check-run-annotations`)
 **Intent:** Retrieve check-run annotations (such as Xcode Cloud, App Store Connect, compiler diagnostics, and linter notices) in addition to review comments and issue comments, so inline feedback surfaced on the GitHub diff tab is triaged and addressed.
