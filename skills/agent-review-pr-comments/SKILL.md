@@ -206,19 +206,23 @@ gh api --paginate "/repos/{owner}/{repo}/issues/$pr_number/comments" > "${scratc
 jq -r '.[] | "ISSUE [\(.id)] by \(.user.login):\n\(.body)\n"' "${scratch_dir}/issue-comments.json" || { echo "ERROR: issue-comment render failed; check jq and the JSON payload" >&2; exit 1; }
 issue_count=$(jq -s 'map(length) | add // 0' "${scratch_dir}/issue-comments.json") || { echo "ERROR: issue-comment count failed; check jq and the JSON payload" >&2; exit 1; }
 printf 'fetched counts: inline=%s reviews=%s issue=%s\n' "$inline_count" "$reviews_count" "$issue_count"
-snapshot_sha=$(gh pr view "$pr_number" --json headRefOid --jq .headRefOid) || { echo "ERROR: snapshot SHA re-read failed; refusing to attribute comments" >&2; exit 1; }
-[ "$snapshot_sha" = "$triage_sha" ] || { echo "ERROR: PR head moved during comment fetch (triage $triage_sha, now $snapshot_sha); re-run to re-triage" >&2; exit 1; }
 
 # Check-run annotations (Xcode Cloud, App Store Connect, compiler and linter notices)
-gh api "/repos/{owner}/{repo}/commits/<triage_sha>/check-runs" > "${scratch_dir:?}/check-runs.json" || { echo "ERROR: check-runs fetch failed; check the triage SHA and gh auth" >&2; exit 1; }
-jq -c '.check_runs[]? | select((.output.annotations_count // .annotations_count // 0) > 0) | {id: .id, name: .name}' "${scratch_dir}/check-runs.json" 2>/dev/null | while read -r cr; do
-  [ -n "$cr" ] || continue
-  c_id="$(printf '%s' "$cr" | jq -r .id)"
-  c_name="$(printf '%s' "$cr" | jq -r .name)"
-  [ -n "$c_id" ] && [ "$c_id" != "null" ] || continue
-  gh api "/repos/{owner}/{repo}/check-runs/${c_id}/annotations" > "${scratch_dir:?}/ann_${c_id}.json" 2>/dev/null || continue
-  jq -r --arg name "$c_name" '.[] | "ANNOTATION [\(.annotation_level // "notice")] \(.path):\(.start_line // .line // 0) by \($name):\n\(.message)\n"' "${scratch_dir}/ann_${c_id}.json" 2>/dev/null || true
-done
+gh api --paginate "/repos/{owner}/{repo}/commits/$triage_sha/check-runs" > "${scratch_dir:?}/check-runs.json" || { echo "ERROR: check-runs fetch failed; check the triage SHA and gh auth" >&2; exit 1; }
+jq -sr 'if length == 0 or any(.[]; type != "object" or (.check_runs | type) != "array") then error("bad check-runs payload") else [.[].check_runs[] | select(((.output.annotations_count // .annotations_count) // 0) > 0) | select((.id | type) == "number") | [.id, .name, ((.output.annotations_count // .annotations_count) // 0)] | @tsv] | .[] end' "${scratch_dir}/check-runs.json" > "${scratch_dir:?}/ann-runs.tsv" || { echo "ERROR: check-runs parse failed; check jq and the JSON payload" >&2; exit 1; }
+ann_count=0
+while IFS="$(printf '\t')" read -r c_id c_name c_expected; do
+  case "$c_id" in ""|*[!0-9]*) echo "ERROR: check-run id missing in annotations selection; check jq and the JSON payload" >&2; exit 1;; esac
+  gh api --paginate "/repos/{owner}/{repo}/check-runs/$c_id/annotations" > "${scratch_dir:?}/ann_${c_id}.json" || { echo "ERROR: annotations fetch failed for check run $c_id; check the check-run id and gh auth" >&2; exit 1; }
+  jq -se 'all(.[]; type == "array" and all(.[]; type == "object"))' "${scratch_dir}/ann_${c_id}.json" >/dev/null || { echo "ERROR: annotations payload invalid for check run $c_id; check jq and the JSON payload" >&2; exit 1; }
+  c_count=$(jq -s 'map(length) | add // 0' "${scratch_dir}/ann_${c_id}.json") || { echo "ERROR: annotations count failed for check run $c_id; check jq and the JSON payload" >&2; exit 1; }
+  if [ "$c_count" != "$c_expected" ]; then echo "WARNING: check run $c_id declares $c_expected annotations but fetched $c_count; reporting the fetched annotations" >&2; fi
+  ann_count=$((ann_count + c_count))
+  jq -r --arg name "$c_name" '.[] | "ANNOTATION [\(.annotation_level // "notice")] \(.path):\(.start_line // .line // 0) by \($name):\n\(.message)\n"' "${scratch_dir}/ann_${c_id}.json" || { echo "ERROR: annotations render failed for check run $c_id; check jq and the JSON payload" >&2; exit 1; }
+done < "${scratch_dir}/ann-runs.tsv"
+printf 'fetched counts: annotations=%s\n' "$ann_count"
+snapshot_sha=$(gh pr view "$pr_number" --json headRefOid --jq .headRefOid) || { echo "ERROR: snapshot SHA re-read failed; refusing to attribute comments" >&2; exit 1; }
+[ "$snapshot_sha" = "$triage_sha" ] || { echo "ERROR: PR head moved during comment fetch (triage $triage_sha, now $snapshot_sha); re-run to re-triage" >&2; exit 1; }
 
 trap - EXIT
 [ -n "${_prev_exit_trap:-}" ] && trap "${_prev_exit_trap:-}" EXIT || true

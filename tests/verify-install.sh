@@ -556,8 +556,9 @@ check "pr input quoted: prc" grep -q -F "gh pr view '<pr_input>'" "${BUNDLE}/ski
 check "pr input quoted: report" grep -q -F "gh pr view '<pr_input>'" "${BUNDLE}/skills/agent-review-report/SKILL.md"
 check "git add quoted: prc" grep -q -F "git add -- '<file1>' '<file2>'" "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
 check "git push quoted: prc" grep -q -F "git push -u origin 'HEAD:refs/heads/<type>/<branch-name>'" "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
-check "pr url quoted: prc" test "$(grep -c -F 'gh api --paginate "/repos/{owner}/{repo}/' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md")" = "3"
-check "pr api quoted: prc" test "$(grep -c -F 'gh api "/repos/{owner}/{repo}/' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md")" = "2"
+check "pr url quoted: prc" test "$(grep -c -F 'gh api --paginate "/repos/{owner}/{repo}/' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md")" = "5"
+check "prc annotations fetch paginates" grep -q -F 'gh api --paginate "/repos/{owner}/{repo}/check-runs/$c_id/annotations"' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
+check "prc check-runs uses triage variable" grep -q -F 'gh api --paginate "/repos/{owner}/{repo}/commits/$triage_sha/check-runs"' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
 check "pr number quoted: prc" test "$(grep -c -F 'gh pr view "<pr_number>"' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md")" = "6"
 check "prc omitted counts open PRs" grep -q -F 'expected exactly one open PR for the current branch' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
 check "cci cancel bound disclosed" grep -q -F 'newest 100 runs' "${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
@@ -566,7 +567,7 @@ check "pr checks quoted: prc" grep -q -F 'gh pr checks "<pr_number>"' "${BUNDLE}
 check "pr comment quoted: report" grep -q -F 'gh pr comment "<pr_number>"' "${BUNDLE}/skills/agent-review-report/SKILL.md"
 check "pr numeric posix: report" grep -q -F 'case "$pr_number" in ""|*[!0-9]*)' "${BUNDLE}/skills/agent-review-report/SKILL.md"
 check "prc end rm guarded" test -z "$(grep -F 'rm -rf "${scratch_dir}"' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md")"
-check "scratch redirects guarded: prc" test "$(grep -c -F '> "${scratch_dir:?}/' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md")" = "5"
+check "scratch redirects guarded: prc" test "$(grep -c -F '> "${scratch_dir:?}/' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md")" = "6"
 check "single-shell mandate: loop" grep -q -F 'ONE bash invocation' "${BUNDLE}/skills/agent-review-loop/SKILL.md"
 check "single-shell mandate: report" grep -q -F 'ONE bash invocation' "${BUNDLE}/skills/agent-review-report/SKILL.md"
 check "fresh-run guard: loop" grep -q -F 'FRESH RUN ONLY' "${BUNDLE}/skills/agent-review-loop/SKILL.md"
@@ -897,8 +898,8 @@ check "fallback span extracted: prc" test -s "${LOG_DIR}/fallback-prc.txt"
 check "cci/prc fallback spans identical" cmp -s "${LOG_DIR}/fallback-cci.txt" "${LOG_DIR}/fallback-prc.txt"
 check "prc fetch counts line" grep -q -F '"$inline_count" "$reviews_count" "$issue_count"' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
 check "prc inline count slurps diff file" grep -q -F 'inline_count=$(jq -s' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
-grep -F 'count=$(jq -s' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" > "${LOG_DIR}/prc-counts.sh" || true
-grep -F "printf 'fetched counts:" "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" >> "${LOG_DIR}/prc-counts.sh" || true
+grep -E '(inline|reviews|issue)_count=\$\(jq -s' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" > "${LOG_DIR}/prc-counts.sh" || true
+grep -F "printf 'fetched counts: inline=" "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" >> "${LOG_DIR}/prc-counts.sh" || true
 check "prc counts block extracted" test "$(wc -l < "${LOG_DIR}/prc-counts.sh" | tr -d ' ')" = "4"
 mkdir -p "${TEST_DIR}/prc-counts"
 printf '[{},{}][{}]' > "${TEST_DIR}/prc-counts/diff-comments.json"
@@ -912,7 +913,7 @@ EOF
 run_split prc-counts env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" bash "${LOG_DIR}/prc-counts-run.sh"
 check "prc counts rc" test "$(cat "${LOG_DIR}/split-prc-counts.rc")" = "0"
 check "prc counts sum paginated pages" test "$(cat "${LOG_DIR}/split-prc-counts.out")" = "fetched counts: inline=3 reviews=1 issue=2"
-check "prc counts slurp totals x3" test "$(grep -c 'map(length) | add // 0' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" || true)" = "3"
+check "prc counts slurp totals x4" test "$(grep -c 'map(length) | add // 0' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" || true)" = "4"
 mkdir -p "${TEST_DIR}/prc-counts-empty"
 : > "${TEST_DIR}/prc-counts-empty/diff-comments.json"
 : > "${TEST_DIR}/prc-counts-empty/reviews.json"
@@ -933,6 +934,8 @@ cat > "${TEST_DIR}/stubbin-prc-fetch/gh" <<'EOF'
 #!/bin/sh
 if [ "$1" = "api" ]; then
   case "$3" in
+    *annotations*) printf '[{"annotation_level":"warning","path":"a.md","start_line":3,"message":"note"}]\n';;
+    *check-runs*) printf '{"total_count":1,"check_runs":[{"id":101,"name":"lint-job","output":{"annotations_count":1}}]}\n';;
     *pulls*reviews*) printf '[{"id":2,"state":"COMMENTED","user":{"login":"bot"},"body":"review body"}]\n';;
     *pulls*) printf '[{"id":1,"path":"a.md","line":3,"user":{"login":"bot"},"body":"diff body"}]\n';;
     *issues*) printf '[{"id":3,"user":{"login":"bot"},"body":"issue body"}]\n';;
@@ -1857,15 +1860,64 @@ cat > "${LOG_DIR}/check-runs-sample.json" <<'EOF'
       "name": "build-job",
       "annotations_count": null,
       "output": null
+    },
+    {
+      "id": 104,
+      "name": "legacy-job",
+      "annotations_count": 3,
+      "output": null
     }
   ]
 }
 EOF
-prc_jq_expr="$(grep -o -E "jq -c '\.check_runs\[\]\?[^']+'" "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" || true)"
+prc_jq_expr="$(grep -o -E "jq -sr '[^']*check_runs[^']*'" "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" || true)"
+check "prc check-runs selector extracted" test -n "$prc_jq_expr"
 eval "${prc_jq_expr} \"${LOG_DIR}/check-runs-sample.json\"" > "${LOG_DIR}/check-runs-sample.out" 2>"${LOG_DIR}/check-runs-sample.err" || true
-check "prc check-runs filter extracts positive count" grep -q '{"id":101,"name":"lint-job"}' "${LOG_DIR}/check-runs-sample.out"
+check "prc check-runs filter output non-empty" test -s "${LOG_DIR}/check-runs-sample.out"
+check "prc check-runs filter extracts positive count" test "$(cat "${LOG_DIR}/check-runs-sample.out")" = "$(printf '101\tlint-job\t2\n104\tlegacy-job\t3')"
 check "prc check-runs filter ignores zero count" test -z "$(grep '102' "${LOG_DIR}/check-runs-sample.out" || true)"
 check "prc check-runs filter ignores null count" test -z "$(grep '103' "${LOG_DIR}/check-runs-sample.out" || true)"
+check "prc annotations render pinned" grep -q -F 'ANNOTATION [\(.annotation_level // "notice")]' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
+sed -n '/# Check-run annotations/,/re-run to re-triage/p' "${BUNDLE}/skills/agent-review-pr-comments/SKILL.md" > "${LOG_DIR}/prc-ann.sh" || true
+check "prc annotations span extracted" grep -q -F 'fetched counts: annotations=' "${LOG_DIR}/prc-ann.sh"
+mkdir -p "${TEST_DIR}/stubbin-prc-ann"
+cat > "${TEST_DIR}/stubbin-prc-ann/gh" <<'EOF'
+#!/bin/sh
+if [ "$1" = "api" ]; then
+  case "$3" in
+    *"/check-runs") case "${STUB_ANN_MODE:-}" in badshape) printf '{"message":"Not Found"}\n';; badjson) printf 'not-json\n';; *) printf '{"total_count":1,"check_runs":[{"id":101,"name":"lint-job","output":{"annotations_count":2}}]}\n';; esac;;
+    *"/annotations") case "${STUB_ANN_MODE:-}" in fetchfail) exit 1;; badann) printf '{"a":{"annotation_level":"warning","path":"x","start_line":1,"message":"m"}}\n';; *) printf '[{"annotation_level":"warning","path":"Sources/App.swift","start_line":42,"message":"unused variable"},{"annotation_level":"failure","path":"Sources/Main.swift","start_line":7,"message":"compile error"}]\n';; esac;;
+    *) exit 1;;
+  esac
+  exit 0
+fi
+if [ "$1 $2" = "pr view" ]; then printf '%s\n' "${STUB_VIEW_SHA:?}"; exit 0; fi
+exit 1
+EOF
+chmod +x "${TEST_DIR}/stubbin-prc-ann/gh"
+cat > "${LOG_DIR}/prc-ann-run.sh" <<'EOF'
+set -u
+scratch_dir="$RW_TD/prc-ann-run"; mkdir -p "$scratch_dir"
+pr_number=6; triage_sha="$STUB_SHA"
+. "$RW_LD/prc-ann.sh"
+EOF
+run_split prc-ann-match env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" "STUB_SHA=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" "STUB_VIEW_SHA=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" PATH="${TEST_DIR}/stubbin-prc-ann:${PATH}" bash "${LOG_DIR}/prc-ann-run.sh"
+check "prc annotations match rc" test "$(cat "${LOG_DIR}/split-prc-ann-match.rc")" = "0"
+check "prc annotations rendered" grep -q -F 'ANNOTATION [warning] Sources/App.swift:42 by lint-job:' "${LOG_DIR}/split-prc-ann-match.out"
+check "prc annotations counted" grep -q -F 'fetched counts: annotations=2' "${LOG_DIR}/split-prc-ann-match.out"
+check "prc annotations render second" grep -q -F 'ANNOTATION [failure] Sources/Main.swift:7 by lint-job:' "${LOG_DIR}/split-prc-ann-match.out"
+check "prc annotations render both" test "$(grep -c '^ANNOTATION ' "${LOG_DIR}/split-prc-ann-match.out" || true)" = "2"
+run_split prc-ann-drift env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" "STUB_SHA=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" "STUB_VIEW_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" PATH="${TEST_DIR}/stubbin-prc-ann:${PATH}" bash "${LOG_DIR}/prc-ann-run.sh"
+check "prc annotations drift rc" test "$(cat "${LOG_DIR}/split-prc-ann-drift.rc")" = "1"
+check "prc annotations drift named" grep -q 'PR head moved during comment fetch' "${LOG_DIR}/split-prc-ann-drift.err"
+for annmode in fetchfail badshape badjson badann; do
+  run_split "prc-ann-$annmode" env "RW_TD=${TEST_DIR}" "RW_LD=${LOG_DIR}" "STUB_SHA=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" "STUB_VIEW_SHA=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" "STUB_ANN_MODE=$annmode" PATH="${TEST_DIR}/stubbin-prc-ann:${PATH}" bash "${LOG_DIR}/prc-ann-run.sh"
+  check "prc annotations $annmode rc" test "$(cat "${LOG_DIR}/split-prc-ann-$annmode.rc")" = "1"
+done
+check "prc annotations fetchfail named" grep -q 'annotations fetch failed for check run 101' "${LOG_DIR}/split-prc-ann-fetchfail.err"
+check "prc annotations badshape named" grep -q 'check-runs parse failed' "${LOG_DIR}/split-prc-ann-badshape.err"
+check "prc annotations badjson named" grep -q 'check-runs parse failed' "${LOG_DIR}/split-prc-ann-badjson.err"
+check "prc annotations badann named" grep -q 'annotations payload invalid for check run 101' "${LOG_DIR}/split-prc-ann-badann.err"
 
 echo
 echo "RESULT: ${pass} passed, ${fail} failed"
