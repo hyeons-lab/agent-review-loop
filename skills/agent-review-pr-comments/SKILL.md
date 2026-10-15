@@ -1,16 +1,16 @@
 ---
 name: agent-review-pr-comments
-description: Address PR review comments (human feedback and automated review bots such as Antigravity, Copilot, and similar) on a target PR, apply and validate the fixes, sync stacked PRs, and fold CI-caught misses back into the shared cross-agent review pillars used by agent-review-loop.
+description: Address PR review comments (human feedback, automated review bots such as Antigravity and Copilot, and check-run annotations from Xcode Cloud, App Store Connect, or linters) on a target PR, apply and validate the fixes, sync stacked PRs, and fold CI-caught misses back into the shared cross-agent review pillars used by agent-review-loop.
 ---
 
 # Agent Review PR Comments (Multi-Agent)
 
-Autonomously address pull request review comments (human feedback and
-automated review bots such as Antigravity comment reviews, Copilot, and
-similar review apps), apply and validate the fixes, synchronize stacked
-PRs, and synthesize what CI caught into the shared review pillars so local
-pre-merge review keeps getting stronger without growing an unbounded
-checklist.
+Autonomously address pull request review comments (human feedback,
+automated review bots such as Antigravity comment reviews and Copilot,
+and check-run annotations from Xcode Cloud, App Store Connect, or linters),
+apply and validate the fixes, synchronize stacked PRs, and synthesize what
+CI caught into the shared review pillars so local pre-merge review keeps
+getting stronger without growing an unbounded checklist.
 
 This skill runs in Muse, Claude Code, Codex, and Antigravity/Gemini. It
 runs its `gh` and `git` commands directly and needs no subagents. It shares
@@ -65,8 +65,9 @@ The skill takes a target PR number or URL (`<pr_input>`; paste it inside the sin
 use the open PR for the current branch and stop when there is not
 exactly one. Run in a checkout of the PR's repository (or its worktree):
 `gh` fills `{owner}` and `{repo}` in API paths from that checkout.
-Section 1A resolves the input to a number once; use that number for
-`<pr_number>` in every later snippet. If the work lives in a git
+Section 1A resolves the input to a number and triage SHA once; use that
+number for `<pr_number>` and that SHA for `<triage_sha>` in every later
+snippet. If the work lives in a git
 worktree, `cd` into the INNERMOST worktree containing the files under
 review first and run every fenced block below unmodified; never sprinkle
 `-C` inside the mirrored span (a partial rewrite splits state: in normal
@@ -85,8 +86,9 @@ against lessons earlier cycles filed.
 
 ### A. Query the GitHub API for feedback
 
-Retrieve inline review comments, submitted review summaries, and
-top-level issue comments for the target PR. Resolve the input first,
+Retrieve inline review comments, submitted review summaries, top-level
+issue comments, and check-run annotations (Xcode Cloud, App Store Connect,
+compiler or linter notices) for the target PR. Resolve the input first,
 then fetch:
 
 <!-- Bootstrap mirror: the 8 run-root bootstraps (loop section 4 plus heartbeat, report section 1 working-diff plus PR plus heartbeat plus section 6, pr-comments section 1A, check-ci section 1A) stay identical modulo list indentation and reaper name pattern. -->
@@ -204,6 +206,21 @@ gh api --paginate "/repos/{owner}/{repo}/issues/$pr_number/comments" > "${scratc
 jq -r '.[] | "ISSUE [\(.id)] by \(.user.login):\n\(.body)\n"' "${scratch_dir}/issue-comments.json" || { echo "ERROR: issue-comment render failed; check jq and the JSON payload" >&2; exit 1; }
 issue_count=$(jq -s 'map(length) | add // 0' "${scratch_dir}/issue-comments.json") || { echo "ERROR: issue-comment count failed; check jq and the JSON payload" >&2; exit 1; }
 printf 'fetched counts: inline=%s reviews=%s issue=%s\n' "$inline_count" "$reviews_count" "$issue_count"
+
+# Check-run annotations (Xcode Cloud, App Store Connect, compiler and linter notices)
+gh api --paginate "/repos/{owner}/{repo}/commits/$triage_sha/check-runs" > "${scratch_dir:?}/check-runs.json" || { echo "ERROR: check-runs fetch failed; check the triage SHA and gh auth" >&2; exit 1; }
+jq -sr 'if length == 0 or any(.[]; type != "object" or (.check_runs | type) != "array") then error("bad check-runs payload") else [.[].check_runs[] | select(((.output.annotations_count // .annotations_count) // 0) > 0) | select((.id | type) == "number") | [.id, .name, ((.output.annotations_count // .annotations_count) // 0)] | @tsv] | .[] end' "${scratch_dir}/check-runs.json" > "${scratch_dir:?}/ann-runs.tsv" || { echo "ERROR: check-runs parse failed; check jq and the JSON payload" >&2; exit 1; }
+ann_count=0
+while IFS="$(printf '\t')" read -r c_id c_name c_expected; do
+  case "$c_id" in ""|*[!0-9]*) echo "ERROR: check-run id missing in annotations selection; check jq and the JSON payload" >&2; exit 1;; esac
+  gh api --paginate "/repos/{owner}/{repo}/check-runs/$c_id/annotations" > "${scratch_dir:?}/ann_${c_id}.json" || { echo "ERROR: annotations fetch failed for check run $c_id; check the check-run id and gh auth" >&2; exit 1; }
+  jq -se 'all(.[]; type == "array" and all(.[]; type == "object"))' "${scratch_dir}/ann_${c_id}.json" >/dev/null || { echo "ERROR: annotations payload invalid for check run $c_id; check jq and the JSON payload" >&2; exit 1; }
+  c_count=$(jq -s 'map(length) | add // 0' "${scratch_dir}/ann_${c_id}.json") || { echo "ERROR: annotations count failed for check run $c_id; check jq and the JSON payload" >&2; exit 1; }
+  if [ "$c_count" != "$c_expected" ]; then echo "WARNING: check run $c_id declares $c_expected annotations but fetched $c_count; reporting the fetched annotations" >&2; fi
+  ann_count=$((ann_count + c_count))
+  jq -r --arg name "$c_name" '.[] | "ANNOTATION [\(.annotation_level // "notice")] \(.path):\(.start_line // .line // 0) by \($name):\n\(.message)\n"' "${scratch_dir}/ann_${c_id}.json" || { echo "ERROR: annotations render failed for check run $c_id; check jq and the JSON payload" >&2; exit 1; }
+done < "${scratch_dir}/ann-runs.tsv"
+printf 'fetched counts: annotations=%s\n' "$ann_count"
 snapshot_sha=$(gh pr view "$pr_number" --json headRefOid --jq .headRefOid) || { echo "ERROR: snapshot SHA re-read failed; refusing to attribute comments" >&2; exit 1; }
 [ "$snapshot_sha" = "$triage_sha" ] || { echo "ERROR: PR head moved during comment fetch (triage $triage_sha, now $snapshot_sha); re-run to re-triage" >&2; exit 1; }
 
@@ -233,14 +250,15 @@ when it is installed alongside this one
 against the titles above plus every shared learnings file that exists (see
 section 3).
 
-Address every review source on the PR: human comments plus all bot
-reviews (Antigravity comment reviews, Copilot, and any other review
-app posting here). Treat bot feedback as unverified until checked
-against the *current* worktree code: a bot often flags logic that was
-already refactored or is already handled. Document each false positive
-with its technical reasoning plus the command and output that disproves
-it, so the next reader need not re-derive the check, instead of
-changing code to silence it.
+Address every review source on the PR: human comments, bot reviews
+(Antigravity comment reviews, Copilot, and any other review app posting
+here), and CI check-run annotations (Xcode Cloud, App Store Connect,
+compiler or linter notices). Treat bot feedback and check-run annotations as
+unverified until checked against the *current* worktree code: an annotation or
+bot often flags logic that was already refactored or is already handled.
+Document each false positive with its technical reasoning plus the command
+and output that disproves it, so the next reader need not re-derive the check,
+instead of changing code to silence it.
 
 Classify each comment:
 - **Actionable Fix**: a valid defect or improvement. Plan and apply the fix.
