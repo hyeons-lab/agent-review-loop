@@ -777,6 +777,7 @@ for s in agent-review-loop agent-review-report agent-review-pr-comments agent-re
   check "filing bullet template: $s" grep -q -F -- '- **Title**: Trigger condition' "${BUNDLE}/skills/$s/SKILL.md"
   check "filing attribution ban: $s" grep -q -F 'Zero attribution: no signatures' "${BUNDLE}/skills/$s/SKILL.md"
   check "filing heading verify: $s" grep -q -F "must equal 8" "${BUNDLE}/skills/$s/SKILL.md"
+  check "filing outside-workspace fallback: $s" grep -q -F 'absolute path is outside the' "${BUNDLE}/skills/$s/SKILL.md"
 done
 for s in agent-review-loop agent-review-report agent-review-pr-comments agent-review-check-ci; do
   sed -n '/backup_tmp=/,/failed to snapshot/p' "${BUNDLE}/skills/$s/SKILL.md" > "${LOG_DIR}/backup-$s.txt" || true
