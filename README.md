@@ -1,6 +1,6 @@
 # `agent-review-loop`
 
-Three multi-agent review skills sharing one pillars file:
+Four multi-agent review skills sharing one pillars file:
 `agent-review-loop` reviews the working diff with subagents at a fixed
 effort (`low`, `medium`, `high`, `max`), fixes what they find,
 re-reviews only the dirty lenses (actionable findings plus any flagged
@@ -8,9 +8,10 @@ or missing lens), and confirms each clean or nitpicks-only subset with
 a full round; `agent-review-report`
 runs one report-only `max`
 review over the working diff or a target PR and presents the findings;
-and `agent-review-pr-comments` addresses review feedback on a target PR and
-syncs the stack. All three file novel learnings as they go (each round,
-each report, or each fix cycle for the PR skill), so later work reviews
+`agent-review-pr-comments` addresses review feedback on a target PR and
+syncs the stack; and `agent-review-check-ci` checks CI status on a target PR,
+diagnoses red builds, and fixes them. All four file novel learnings as they go (each round,
+each report, or each fix cycle for the PR and CI skills), so later work reviews
 against what the earlier work learned.
 Each skill body runs in **Muse**, **Claude Code**, **Codex**, and
 **Antigravity/Gemini**.
@@ -31,6 +32,10 @@ Each skill body runs in **Muse**, **Claude Code**, **Codex**, and
 - `skills/agent-review-pr-comments/SKILL.md`: the PR feedback skill (fetch and
   triage comments, apply fixes, sync stacked PRs, file learnings).
 - `skills/agent-review-pr-comments/agents/openai.yaml`: Codex display metadata
+  (ignored by other runtimes).
+- `skills/agent-review-check-ci/SKILL.md`: the CI skill (check CI status on a
+  target PR, diagnose and fix red builds, file learnings).
+- `skills/agent-review-check-ci/agents/openai.yaml`: Codex display metadata
   (ignored by other runtimes).
 - `templates/review-refinements.template.md`: seed for the shared learnings
   file that loops update.
@@ -59,15 +64,15 @@ refinements file. Pick targets to install fewer:
 ./install.sh --dry-run               # print what would change; change nothing
 ```
 
-Each flag installs all three skills under its directory:
+Each flag installs all four skills under its directory:
 
 | Flag | Directory |
 |---|---|
-| `--agents` | `~/.agents/skills/{agent-review-loop,agent-review-report,agent-review-pr-comments}` (canonical store) |
-| `--muse` | `$XDG_CONFIG_HOME/muse/skills/{agent-review-loop,agent-review-report,agent-review-pr-comments}` (`~/.config` by default) |
-| `--claude` | `~/.claude/skills/{agent-review-loop,agent-review-report,agent-review-pr-comments}` |
-| `--codex` | `~/.codex/skills/{agent-review-loop,agent-review-report,agent-review-pr-comments}` |
-| `--antigravity` | `~/.gemini/config/skills/{agent-review-loop,agent-review-report,agent-review-pr-comments}` |
+| `--agents` | `~/.agents/skills/{agent-review-loop,agent-review-report,agent-review-pr-comments,agent-review-check-ci}` (canonical store) |
+| `--muse` | `$XDG_CONFIG_HOME/muse/skills/{agent-review-loop,agent-review-report,agent-review-pr-comments,agent-review-check-ci}` (`~/.config` by default) |
+| `--claude` | `~/.claude/skills/{agent-review-loop,agent-review-report,agent-review-pr-comments,agent-review-check-ci}` |
+| `--codex` | `~/.codex/skills/{agent-review-loop,agent-review-report,agent-review-pr-comments,agent-review-check-ci}` |
+| `--antigravity` | `~/.gemini/config/skills/{agent-review-loop,agent-review-report,agent-review-pr-comments,agent-review-check-ci}` |
 
 Restart the agent (or start a new session) after installing, then invoke:
 
@@ -75,6 +80,7 @@ Restart the agent (or start a new session) after installing, then invoke:
 /agent-review-loop [low|medium|high|max]
 /agent-review-report [<pr_number_or_url>]
 /agent-review-pr-comments [<pr_number_or_url>]
+/agent-review-check-ci [<pr_number_or_url>]
 ```
 
 Default effort for `agent-review-loop` is `high` (`agent-review-report`
@@ -146,11 +152,11 @@ that generally, abstract it or file it repo-local.
 ## Uninstall
 
 ```bash
-rm -rf ~/.agents/skills/agent-review-loop ~/.agents/skills/agent-review-report ~/.agents/skills/agent-review-pr-comments \
-  "${XDG_CONFIG_HOME:-$HOME/.config}/muse/skills/agent-review-loop" "${XDG_CONFIG_HOME:-$HOME/.config}/muse/skills/agent-review-report" "${XDG_CONFIG_HOME:-$HOME/.config}/muse/skills/agent-review-pr-comments" \
-  ~/.claude/skills/agent-review-loop ~/.claude/skills/agent-review-report ~/.claude/skills/agent-review-pr-comments \
-  ~/.codex/skills/agent-review-loop ~/.codex/skills/agent-review-report ~/.codex/skills/agent-review-pr-comments \
-  ~/.gemini/config/skills/agent-review-loop ~/.gemini/config/skills/agent-review-report ~/.gemini/config/skills/agent-review-pr-comments
+rm -rf ~/.agents/skills/agent-review-loop ~/.agents/skills/agent-review-report ~/.agents/skills/agent-review-pr-comments ~/.agents/skills/agent-review-check-ci \
+  "${XDG_CONFIG_HOME:-$HOME/.config}/muse/skills/agent-review-loop" "${XDG_CONFIG_HOME:-$HOME/.config}/muse/skills/agent-review-report" "${XDG_CONFIG_HOME:-$HOME/.config}/muse/skills/agent-review-pr-comments" "${XDG_CONFIG_HOME:-$HOME/.config}/muse/skills/agent-review-check-ci" \
+  ~/.claude/skills/agent-review-loop ~/.claude/skills/agent-review-report ~/.claude/skills/agent-review-pr-comments ~/.claude/skills/agent-review-check-ci \
+  ~/.codex/skills/agent-review-loop ~/.codex/skills/agent-review-report ~/.codex/skills/agent-review-pr-comments ~/.codex/skills/agent-review-check-ci \
+  ~/.gemini/config/skills/agent-review-loop ~/.gemini/config/skills/agent-review-report ~/.gemini/config/skills/agent-review-pr-comments ~/.gemini/config/skills/agent-review-check-ci
 ```
 
 This leaves `~/.agents/review-refinements.md` in place. Delete it as well
@@ -161,13 +167,15 @@ only when you mean to discard your accumulated learnings.
 When a script is not wanted:
 
 ```bash
-mkdir -p ~/.agents/skills/agent-review-loop/agents ~/.agents/skills/agent-review-report/agents ~/.agents/skills/agent-review-pr-comments/agents
+mkdir -p ~/.agents/skills/agent-review-loop/agents ~/.agents/skills/agent-review-report/agents ~/.agents/skills/agent-review-pr-comments/agents ~/.agents/skills/agent-review-check-ci/agents
 cp skills/agent-review-loop/SKILL.md skills/agent-review-loop/thematic-review-pillars.md ~/.agents/skills/agent-review-loop/
 cp skills/agent-review-loop/agents/openai.yaml ~/.agents/skills/agent-review-loop/agents/
 cp skills/agent-review-report/SKILL.md ~/.agents/skills/agent-review-report/
 cp skills/agent-review-report/agents/openai.yaml ~/.agents/skills/agent-review-report/agents/
 cp skills/agent-review-pr-comments/SKILL.md ~/.agents/skills/agent-review-pr-comments/
 cp skills/agent-review-pr-comments/agents/openai.yaml ~/.agents/skills/agent-review-pr-comments/agents/
+cp skills/agent-review-check-ci/SKILL.md ~/.agents/skills/agent-review-check-ci/
+cp skills/agent-review-check-ci/agents/openai.yaml ~/.agents/skills/agent-review-check-ci/agents/
 # repeat the copies (or symlink) into any agent dir from the table above
 [ -e ~/.agents/review-refinements.md ] || cp templates/review-refinements.template.md ~/.agents/review-refinements.md
 ```
