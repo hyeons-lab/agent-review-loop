@@ -15,7 +15,7 @@ Make `agent-review-loop` converge faster: fewer repeated rounds, fewer defects i
 - [x] 2 provenance labels and the new-class stop rule
 - [x] 3 executable evidence and the tooling ladder
 - [x] 4 fix-check regression hunter and fixer class sweep
-- [ ] 5 cross-scope class sweep
+- [x] 5 cross-scope class sweep
 - [ ] 6 coverage ledger and sharding
 - [ ] 7 redundancy and capture-recapture estimate
 - [ ] 8 effort routing
@@ -28,6 +28,7 @@ Make `agent-review-loop` converge faster: fewer repeated rounds, fewer defects i
 2026-10-15T19:44-0700 skills/agent-review-loop/SKILL.md: finding provenance labels (class, origin, newClass), run class ledger, plateau rule, reviewer-prompt bullet, step 6 Provenance line, step 2 plateau handling.
 2026-10-15T19:45-0700 skills/agent-review-loop/SKILL.md: tooling ladder (per-language deep tools, detect-never-install, tools.md), evidence types ran/trace/read, unreproduced-findings rule, Tool evidence reviewer bullet, step 6 Unreproduced line.
 2026-10-15T19:46-0700 skills/agent-review-loop/SKILL.md: fixer self-critique (class sweep, failure-path review, contract check, hostile read) in step 3; fix-check regression-hunter duties (own class sweep, adversarial probes, what-could-go-wrong list) in step 4.
+2026-10-15T19:47-0700 skills/agent-review-loop/SKILL.md: step 2b class sweep across scopes (derive sweep from each gate-severity class, run over every scope, sweeps.md, recurrence findings tagged sweep), step 2 Actionable pointer, step 6 Sweeps line.
 
 ## Decisions
 
@@ -37,6 +38,7 @@ Make `agent-review-loop` converge faster: fewer repeated rounds, fewer defects i
 2026-10-15T19:44-0700 Plateau means two consecutive full rounds with no fix-induced finding and no new gate-severity class. It asks the user to choose and never finishes the loop or reports a clean review on its own.
 2026-10-15T19:45-0700 Gate-severity findings need a probe or an explicit trace; read-only claims are held as unreproduced and promoted on reproduction, a second independent report, or user acceptance. Deeper tools run once per round and feed reviewers evidence.
 2026-10-15T19:46-0700 A fix that cures one instance and leaves siblings, or breaks on cancel, repeat, empty or maximum input, is the main source of next-round findings. Fixers must sweep and self-review; the fix check now actively tries to break each fix and counts missed siblings as regressions.
+2026-10-15T19:47-0700 A class found in one place is searched for everywhere in the same round, before fixes: the whole repo for a single-diff run, every scope for a multi-scope run. Hits become recurrence findings in their owning scope.
 
 ## Commits
 
@@ -44,4 +46,5 @@ Make `agent-review-loop` converge faster: fewer repeated rounds, fewer defects i
 3f6a130: feat(skills): add convergence phase and severity gate to agent-review-loop
 6eede5b: feat(skills): add finding provenance labels and the plateau rule
 2710714: feat(skills): add the tooling ladder and executable-evidence rule
-HEAD: feat(skills): add fixer self-critique and a regression-hunting fix check
+6583043: feat(skills): add fixer self-critique and a regression-hunting fix check
+HEAD: feat(skills): sweep each found defect class across every scope

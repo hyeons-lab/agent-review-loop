@@ -696,7 +696,8 @@ the risk of fixing it unreproduced. Never drop one silently.
   the classification by itself; it routes via the missing-lens branches
   below and the dirty set in step 7.
 
-If **Actionable**: apply the fixes (step 3), then the fix check (step 4)
+If **Actionable**: run the class sweep across scopes (step 2b), apply the
+fixes (step 3), then the fix check (step 4)
 and verification gate (step 5) as usual; the next round narrows to the
 dirty lenses (step 7).
 
@@ -728,6 +729,35 @@ next round until they answer.
 
 Treat reviewer disagreement as signal, not noise: if two reviewers
 contradict each other, resolve the conflict against the code before fixing.
+
+### Step 2b: Class sweep across scopes
+
+The same defect class recurs in places no reviewer happened to read, so a
+class found once is swept everywhere in the same round, before any fix.
+After classification and before step 3, for every `class` that has a
+gate-severity finding this round:
+
+1. Derive a sweep from the finding: a search pattern, a short structural
+   query, or a one-line checklist naming the shape of the defect, not the
+   instance (for example a `catch` around suspend code without a
+   cancellation rethrow, or a persist call that is asynchronous where its
+   sibling is synchronous).
+2. Run it over every scope in the run. A single-diff run sweeps the whole
+   repository, not only the diff. A multi-scope run (several PRs, packages,
+   or worktrees reviewed in one run) sweeps every scope's changed files and
+   the code those scopes own. Bound the search to the repository or the
+   worktrees; never scan the filesystem.
+3. Judge each hit against the code: a hit that is the same defect becomes a
+   finding with `origin` `recurrence`, evidence type `ran` or `trace`, and
+   a `sweep` tag, in the owning scope; a hit that is a legitimate variant is
+   dropped with a one-line reason.
+4. Append each class, its sweep, the scopes covered, and the hit count to
+   `$rounds_dir/sweeps.md`, and add the hits to the round's findings before
+   classification is final. A class already swept in an earlier round is
+   rerun only over code changed since.
+
+The main agent or one `low` subagent runs the sweeps; they edit nothing.
+Record the classes swept and their hits in the round summary.
 
 ### Step 3: Apply fixes
 
@@ -912,6 +942,8 @@ Report between rounds, briefly:
   `synthesis`, covered vs uncovered per the same five outcomes, operative
   file per the same file rules. A recovered
   stall stays listed; it never collapses back to `full`.
+- **Sweeps**: classes swept this round, scopes covered, and hits (or
+  `none`).
 - **Unreproduced**: `bug` and `correctness` findings held back for lack of
   a probe or trace (title, `file:line`, owning lens), carried as
   must-recheck, or `none`.
