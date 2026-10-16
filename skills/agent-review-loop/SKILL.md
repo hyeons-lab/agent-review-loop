@@ -441,6 +441,9 @@ Every reviewer prompt must include:
   `original`.
 - Tool evidence: the tooling ladder's summary for this scope (below), as
   input to the audit; tool output is evidence, not a finding by itself.
+- Shard and ranges: the shard assigned (file list plus line count) and the
+  instruction to end the report with one `READ | file_path | start-end`
+  line per range read fully, per the coverage ledger above.
 - A read-only rule: reviewers report findings and edit nothing.
 - An execution rule: behavior claims must be checked by running the repo's
   own tests or a minimal reproduction, quoted as command plus result. A
@@ -672,6 +675,47 @@ round as a must-recheck item for its owning lens, and promote it to
 actionable when it is reproduced, when a second independent report (another
 reviewer or a later round) raises the same defect, or when the user accepts
 the risk of fixing it unreproduced. Never drop one silently.
+
+#### Coverage ledger and sharding
+
+A reviewer reads a large diff with finite attention, so each round samples a
+different slice and counts bounce instead of falling. The loop therefore
+records what was actually read and spends the next round where nothing was.
+
+- **Ledger**: `$rounds_dir/coverage.tsv`, one row per file range:
+  `scope`, `file`, `start`, `end`, `content-hash` (of that range's current
+  text, for example `sed -n '<start>,<end>p' <file> | shasum`), `last-round`,
+  and the set of lenses that read it. Reviewers report every range they
+  read fully (not skimmed or only searched) as a line shaped
+  `READ | file_path | start-end` in their report; the main agent merges
+  these into the ledger after each round and recomputes hashes after every
+  fix pass. A range counts as read by a lens only while its hash is
+  unchanged.
+- **Coverage debt**: a changed range that no lens has read, a range whose
+  hash changed since a lens read it, or (for the final confirmation round)
+  a range not yet read by every running lens since it last changed.
+- **Sharding**: when the filtered diff exceeds 1200 changed lines or 12
+  files, split it into shards of at most about 800 changed lines, keeping
+  whole files together and grouping by directory or module. Each running
+  lens reviews each shard it is assigned, so a full round at `high` over S
+  shards is up to 4 x S reviewers, run in waves when the runtime caps
+  concurrency. Quote each reviewer's shard (file list plus line count) in
+  its brief and have it quote it back, like the diff header.
+- **Budget**: cap a round at 24 reviewers (a different cap may be given as
+  an argument). When lenses x shards exceeds the cap, run the shards with
+  the most coverage debt first and rotate the rest into following rounds.
+  A round that left debt is not a full round for finishing purposes: it
+  can classify and fix like any round, but the loop may finish only after a
+  full round that ran every lens over every shard with zero coverage debt
+  at its start and end. State the remaining debt (shards, ranges) in the
+  Coverage entry.
+- **Scoping**: the next round's scope is the dirty set (step 7) plus every
+  shard with coverage debt, so unread and recently changed code is read
+  before already-read code is reread.
+- **Fallbacks**: small diffs need no shards (one shard, ledger still kept).
+  Sequential-fallback runtimes keep the same ledger and read shards one
+  pass at a time. If the ledger cannot be written, say so in Coverage and
+  run without debt tracking; never claim `full` coverage then.
 
 ### Step 2: Classify findings and check the stop condition
 
@@ -926,8 +970,10 @@ Report between rounds, briefly:
 - **Scope next**: dirty lenses rerunning next round and lenses sitting
   out, or `full confirmation round` when step 2 owes one, or `done`.
 - **Coverage**: `full` only when every running lens this round reported
-  with no stall (sitting-out lenses are out of scope, neither reported
-  nor missing) and synthesis (when spawned) reported with no stall. Otherwise
+  over every shard with no stall, the ledger shows zero coverage debt, (sitting-out lenses are out of scope, neither reported
+  nor missing) and synthesis (when spawned) reported with no stall. Also
+  state the ledger summary: changed lines read by all lenses since their
+  last change, and the debt shards or ranges carried forward. Otherwise
   list each stalled, missing, or recovered lens: lens; pillars covered
   (`recovered after nudge`, `replacement reported`) vs uncovered
   (`replacement also stalled`, `replaced then capped (outer bound)`,
