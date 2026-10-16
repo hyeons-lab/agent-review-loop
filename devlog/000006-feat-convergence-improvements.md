@@ -33,6 +33,7 @@ Make `agent-review-loop` converge faster: fewer repeated rounds, fewer defects i
 2026-10-15T19:50-0700 skills/agent-review-loop/SKILL.md: redundancy (verification twin by default, redundancy 2 optional), independence rules, Chapman residual estimate, use in stop proposals, step 2 twin gate, step 6 Redundancy line.
 2026-10-15T19:50-0700 skills/agent-review-loop/SKILL.md: per-scope effort routing (floor stays the chosen effort; scopes routed to max by user hot list, size over 1500 lines, fix-induced churn, risky areas), Section 2 fixed-effort wording, step 6 Routing line.
 2026-10-15T19:54-0700 skills/agent-review-report/SKILL.md (evidence types, class label, tool evidence mirrored; mirror comments updated in both skills), tests/verify-install.sh (25 convergence pins, mutation-checked), README.md (new arguments and Converging faster section).
+2026-10-15T19:59-0700 skills/agent-review-loop/SKILL.md, skills/agent-review-report/SKILL.md, tests/verify-install.sh: fixes from an independent consistency review of steps 1 to 9 (zero-debt rule measured at round end, clean reports carry READ lines, 24 is a concurrency limit with final and twin sets never rotating, estimate only under redundancy 2, twin skipped without isolation, polish at most once, plateau needs a gate finding and ignores subset rounds, backlog never dirties lenses or breaks the streak, unreproduced-only rounds are Backlog Only, sweep hits inherit the spawning lens, finding format carries class/origin/evidence, ladder runs after run setup, new lines persisted, routing.md, origin precedence, intro wording, commit invariant names plateau finish); 13 new pins.
 
 ## Decisions
 
@@ -47,6 +48,7 @@ Make `agent-review-loop` converge faster: fewer repeated rounds, fewer defects i
 2026-10-15T19:50-0700 A loop finishes only when two independent reviewer sets agree. The overlap between the sets gives a Chapman estimate of how many gate-severity defects remain, reported as a lower bound and used to inform, never to end, the loop.
 2026-10-15T19:50-0700 Effort stays the floor for every scope; hot, very large, high-churn or high-risk scopes are raised to max. Routing only raises, and a promoted scope restarts its lens partition with a full round.
 2026-10-15T19:54-0700 Mutation check: removing a heading and the Chapman formula each failed a pin, then the file was restored. Suite: 1322 passed.
+2026-10-15T19:59-0700 An independent read of the finished skill found 16 defects in the spec (unreachable finish rule, a Chapman estimate that was always zero in default mode, a clean reviewer unable to emit coverage lines, polish and confirmation able to loop to the cap, and others). All 16 are fixed, 13 pins added; the review hand-back was verified against the cited lines before applying.
 
 ## Commits
 
@@ -59,4 +61,5 @@ f79086a: feat(skills): sweep each found defect class across every scope
 0cbdf4d: feat(skills): add a coverage ledger and diff sharding
 fafb023: feat(skills): add independent twin reviewers and a residual-defect estimate
 581aaa1: feat(skills): route risky or large scopes to max effort
-HEAD: docs(skills): mirror convergence rules, pin them in tests, document them
+fcce433: docs(skills): mirror convergence rules, pin them in tests, document them
+HEAD: fix(skills): resolve contradictions found by the consistency review

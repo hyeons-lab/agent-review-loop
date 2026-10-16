@@ -10,8 +10,8 @@ review stronger: spawn review **subagents** at a fixed effort level, fix the
 issues they report, then spawn fresh reviewers again at the **same** effort
 but scoped to the dirty set: the lenses that reported actionable findings,
 plus any flagged or missing lens (section 5, steps 1 and 7). Repeat until
-the narrowed rounds go clean or nitpicks-only, confirming each clean or
-nitpicks-only subset with a full round in case the fixes moved a problem
+the narrowed rounds go clean, nitpicks-only, or backlog-only (section 2),
+confirming each such subset with a full round in case the fixes moved a problem
 into another pillar. After every
 round, generalize what that round learned into the shared pillars file, so
 each round reviews against what the previous rounds learned instead of only
@@ -33,8 +33,9 @@ that same table.
    semicolons, parentheses, or separate sentences.
 3. **Commit invariants**:
    - Only commit at the end of the entire loop, after reaching a clean review,
-     a nitpicks-only state, or (convergence phase, section 2) a backlog-only
-     state whose polish pass has been applied and checked.
+     a nitpicks-only state, a backlog-only state whose polish pass has been
+     applied and checked (convergence phase, section 2), or a user-approved
+     plateau finish with the known issues listed.
    - Never commit, push, tag, or amend without explicit human approval in this
      session. Finishing the loop is not approval.
    - Follow the repository's own commit convention (repo docs win over any
@@ -78,9 +79,9 @@ depth for named or risky scopes only and is coverage routing, not an
 escalation of the loop. Coverage, however, narrows
 between rounds: round 1 always runs every lens, later rounds rerun only
 the dirty set from the previous round (section 5, steps 1 and 7), and
-the loop finishes only after a full round goes clean or nitpicks-only,
-running a full confirmation round after every clean or nitpicks-only
-narrowed round. An unknown argument
+the loop finishes only after a full round goes clean, nitpicks-only, or
+backlog-only (or a user-approved plateau finish, section 2), running a
+full confirmation round after every such narrowed round. An unknown argument
 counts as no effort given: use the default and say so.
 
 Choose the effort from the diff, not from habit: unfamiliar code, large
@@ -137,7 +138,7 @@ A scope has one lens partition at a time: when a scope is promoted, discard
 its old lens mapping (carrying its fixed locations as must-recheck) and run
 its next round full under the new partition, exactly as the step-down rule
 does. Record each routed scope and the reason in the round summary's
-Routing line, and in the run ledger.
+Routing line and in `$rounds_dir/routing.md`.
 
 ### Convergence phase and severity gate
 
@@ -164,11 +165,26 @@ the older behavior of fixing every finding in every round.
   step 3 stop rule, check the edits with step 4, run the step 5 gate. If
   the polish edits touch executable code (anything beyond comments and
   docs), run one more full confirmation round; a gate-severity finding
-  there returns the loop to the convergence phase, and the polish
-  restarts from the then-remaining backlog.
-- **Streak and cap**: the quiet-round streak scoring above is unchanged
-  (it already ignores findings at or below `quality`), and the round cap
-  counts every round, polish confirmations included.
+  there returns the loop to the convergence phase. The polish pass runs
+  at most once per loop: a Clean, Nitpicks Only, or Backlog Only
+  post-polish confirmation round finishes the loop (no second twin, no
+  second polish), and its new backlog items are listed in Finishing Up as
+  left. After a return to the convergence phase, the next clean full round
+  may run one further polish over the backlog items not yet applied.
+- **Backlog hygiene**: reviewers receive the current backlog and must not
+  re-report an item already in it; the main agent dedupes by `file_path`
+  and title before appending, and counts only distinct items in the running
+  backlog total.
+- **Streak and cap**: for the quiet-round streak scoring above, a finding
+  already in the backlog does not count toward the one-finding limit
+  (only new findings do, and none may be above `quality`). The round cap
+  counts every round, polish confirmations and twin rounds included.
+- **Dirty set**: in the convergence phase a lens is dirty only when it
+  reported a gate-severity finding (or a flagged hazard, or failed to
+  report); backlog-severity findings never make a lens dirty, never feed
+  the step 7 tripwire, and never count as actionable. Under
+  `all-severities` the original rule (any severity except `nitpick`)
+  applies.
 
 ### Finding provenance and the plateau rule
 
@@ -185,7 +201,10 @@ the round summary reports them:
   of this run, or the fix is incomplete or wrong, from the round summaries'
   Fixes applied lists or the run's fix commits), or `recurrence` (a class
   already in the ledger, found in a place not yet swept).
-- `newClass`: true when the slug is absent from the run ledger.
+- `newClass`: true when the slug is absent from the run class ledger.
+
+When more than one `origin` fits, the precedence is `fix-induced`, then
+`recurrence`, then `original`.
 
 Synthesis owns the labels: it normalizes slugs across reviewers, settles
 `origin` against the code, and appends each class to the run ledger at
@@ -212,10 +231,18 @@ compare what the two sets found.
   Twin reviewers follow every heartbeat, stall, and retry rule here, with
   progress stems prefixed `r<N>-twin-` (for example `r3-twin-reviewer2`),
   and count toward the reviewer budget.
+- **Runtimes without isolation**: where reviewers cannot be isolated from
+  each other's findings (the sequential fallback, or a runtime that shares
+  context between passes), no twin runs: report `Redundancy: n/a (no
+  independent reviewers)`, and this never blocks finishing.
 - **Matching**: synthesis (or the main agent) judges which twin findings
   are the same defect as a first-set finding: same `file`, same region, same
   `class`.
-- **Estimate**: with `n1` and `n2` gate-severity findings from the two sets
+- **Estimate**: only when both sets ran unconditionally (`redundancy 2`)
+  is the estimate meaningful. The default verification twin runs only after
+  a first set with no gate-severity findings, so `n1 = 0` forces `m = 0`
+  and the residual below is always 0; in that mode report only `twin
+  agreed` or `twin found <n>` and compute no estimate. With `n1` and `n2` gate-severity findings from the two sets
   and `m` matches, report the Chapman estimate of the total,
   `N = (n1+1)(n2+1)/(m+1) - 1`, and the residual
   `N - (n1 + n2 - m)` (the number of gate-severity defects likely not yet
@@ -230,11 +257,13 @@ compare what the two sets found.
   finishes the loop by itself.
 
 **Plateau rule.** Counts alone never end a loop; a clean full round still
-does (step 2). When two consecutive full rounds, each with every lens
-reported, have zero `fix-induced` findings and no `newClass` finding of
-gate severity, the loop has plateaued: stop fixing and ask the user whether
-to finish with the remaining gate-severity findings recorded as known
-issues, or to continue. Never finish on your own, and never treat a
+does (step 2). When two consecutive full rounds (subset rounds between them are ignored),
+each with every lens reported, have zero `fix-induced` findings and no
+`newClass` finding of gate severity, and the later of the two still has at
+least one gate-severity finding, the loop has plateaued: apply that round's
+gate-severity fixes as usual, then ask the user whether to finish with the
+remaining gate-severity findings recorded as known issues, or to continue.
+A clean round is never a plateau; it finishes per step 2. Never finish on your own, and never treat a
 plateau as a clean review in the summary. Any `fix-induced` finding or new
 gate-severity class resets the plateau count to zero.
 
@@ -357,7 +386,8 @@ set or a confirmation still owed (step 7).
 
 ### Step 1: Run the review round
 
-Run the tooling ladder (below) first, then spawn the review subagents for
+After the run setup below (which creates `$rounds_dir`), run the tooling
+ladder (below), then spawn the review subagents for
 the chosen effort, then collect every report before proceeding. Each reviewer audits the filtered diff plus the
 surrounding source it needs (callers, types, tests, configs) against the
 **8 Canonical Thematic Pillars**:
@@ -387,7 +417,8 @@ Assign reviewer roles using the exact canonical pillar names:
 Scope the round's lenses before spawning. Round 1 and every full
 confirmation round run every lens above. Any other round reruns only the
 dirty set carried from the previous round (step 7): the lenses that
-reported at least one actionable finding (any severity except `nitpick`),
+reported at least one actionable finding (any severity except `nitpick`;
+in the convergence phase, gate severity only, section 2),
 plus any sitting-out lens flagged out of scope, plus any lens that
 failed to report. Any other lens sits out; its pillars re-enter scope in
 the next full confirmation round. Synthesis, when the effort calls for
@@ -505,7 +536,7 @@ Every reviewer prompt must include:
   input to the audit; tool output is evidence, not a finding by itself.
 - Shard and ranges: the shard assigned (file list plus line count) and the
   instruction to end the report with one `READ | file_path | start-end`
-  line per range read fully, per the coverage ledger above.
+  line per range read fully, per the coverage ledger below.
 - A read-only rule: reviewers report findings and edit nothing.
 - An execution rule: behavior claims must be checked by running the repo's
   own tests or a minimal reproduction, quoted as command plus result. A
@@ -676,10 +707,14 @@ Before each
   or `$rootcanon/agent-review-loop-diff.` (an empty `$real` refuses
   everything).
 - The finding format: `SEVERITY | file_path:line_number | one-line
-  description | why it matters`, with `SEVERITY` in `bug`, `correctness`,
-  `convention`, `quality`, or `nitpick`. Every non-nitpick needs a hazard
+  description | why it matters | class=<slug> | origin=<original, fix-induced,
+  or recurrence> | evidence=<ran, trace, or read>`, with `SEVERITY` in `bug`,
+  `correctness`, `convention`, `quality`, or `nitpick` (`newClass` is derived
+  by synthesis or the main agent from the run ledger, and a sweep hit adds
+  `sweep` after `evidence`). Every non-nitpick needs a hazard
   explanation and a concrete fix (before and after code), not a generic
-  summary. A reviewer with nothing to report returns exactly `NO FINDINGS`.
+  summary. A reviewer with nothing to report returns `NO FINDINGS` followed by its
+  `READ` lines (so a clean report still fills the coverage ledger).
 
 Merge and de-duplicate reports by `file_path:line_number` plus underlying
 defect before classifying. When a non-nitpick finding names a changed area
@@ -732,10 +767,12 @@ A `bug` or `correctness` finding whose only evidence is `read` is labeled
 synthesis). Synthesis first tries a reproduction, a probe in a scratch file
 outside the repo; a probe that shows the defect upgrades the evidence to
 `ran`. An `unreproduced` finding is not fixed and does not by itself make
-the round Actionable; list it in the round summary, carry it to the next
+the round Actionable: a round whose only open items are unreproduced
+findings classifies as Backlog Only for stop purposes and is never Clean
+(step 2), and Finishing Up lists them; list it in the round summary, carry it to the next
 round as a must-recheck item for its owning lens, and promote it to
-actionable when it is reproduced, when a second independent report (another
-reviewer or a later round) raises the same defect, or when the user accepts
+actionable when it is reproduced, when a second independent report (a different lens, a twin reviewer, or a
+synthesis probe, not the same lens repeating itself) raises the same defect, or when the user accepts
 the risk of fixing it unreproduced. Never drop one silently.
 
 #### Coverage ledger and sharding
@@ -763,14 +800,19 @@ records what was actually read and spends the next round where nothing was.
   shards is up to 4 x S reviewers, run in waves when the runtime caps
   concurrency. Quote each reviewer's shard (file list plus line count) in
   its brief and have it quote it back, like the diff header.
-- **Budget**: cap a round at 24 reviewers (a different cap may be given as
-  an argument). When lenses x shards exceeds the cap, run the shards with
-  the most coverage debt first and rotate the rest into following rounds.
-  A round that left debt is not a full round for finishing purposes: it
-  can classify and fix like any round, but the loop may finish only after a
-  full round that ran every lens over every shard with zero coverage debt
-  at its start and end. State the remaining debt (shards, ranges) in the
-  Coverage entry.
+- **Budget**: at most 24 reviewers run at once (a different limit may be
+  given as an argument); more are scheduled in waves inside the same round,
+  so the limit bends scheduling, never coverage. A round may instead
+  rotate: when a non-final round would exceed about 48 reviewer runs, it
+  runs the shards with the most coverage debt first and rotates the rest
+  into following rounds. The final confirmation round and each twin set
+  never rotate: they run every lens over every shard (in waves), and a
+  twin set is budgeted separately from the first set. A round that left
+  debt is not a full round for finishing purposes: it can classify and fix
+  like any round, but the loop may finish only after a full round that ran
+  every lens over every shard and ended with zero coverage debt after its
+  READ lines were merged (debt at the start only orders the shards). State
+  the remaining debt (shards, ranges) in the Coverage entry.
 - **Scoping**: the next round's scope is the dirty set (step 7) plus every
   shard with coverage debt, so unread and recently changed code is read
   before already-read code is reread.
@@ -786,7 +828,8 @@ records what was actually read and spends the next round where nothing was.
   the round summary with its Coverage entry and file the round learnings
   (step 6, mandatory) before advancing; the next round narrows to the
   missing lenses (step 7). Never classify an empty round as Clean.
-- **Clean**: every reporting reviewer in the round returned `NO FINDINGS`.
+- **Clean**: every reporting reviewer in the round returned `NO FINDINGS`
+  (plus its `READ` lines).
 - **Nitpicks Only**: every finding has `nitpick` severity (cosmetic
   formatting, doc phrasing, or trivial preferences only).
 - **Backlog Only** (convergence phase): every finding has `quality` or
@@ -860,7 +903,11 @@ gate-severity finding this round:
    finding with `origin` `recurrence`, evidence type `ran` or `trace`, and
    a `sweep` tag, in the owning scope; a hit that is a legitimate variant is
    dropped with a one-line reason.
-4. Append each class, its sweep, the scopes covered, and the hit count to
+4. A sweep hit inherits the lens of the finding that spawned its class (so
+   it enters that lens's dirty set), and is fixed under step 3 even when it
+   lies outside the reviewed diff, when it is gate severity; lower
+   severities go to the backlog.
+5. Append each class, its sweep, the scopes covered, and the hit count to
    `$rounds_dir/sweeps.md`, and add the hits to the round's findings before
    classification is final. A class already swept in an earlier round is
    rerun only over code changed since.
@@ -1090,7 +1137,8 @@ secrets redacted per the redaction invariant); "finalize" means verify
 `[ -s "$rounds_dir/r<N>-reports.md" ]`, never rewrite. Also write
 `r<N>-summary.md` (the
 Coverage, fixes, verification, learnings, and scope lines reported
-above, secrets redacted per the redaction invariant). If `$rounds_dir` is unset (fresh shell),
+above, plus the Backlog, Provenance (with the plateau count), Redundancy,
+Unreproduced, Sweeps, and Routing lines, secrets redacted per the redaction invariant). If `$rounds_dir` is unset (fresh shell),
 re-derive it: first `cd '<recorded toplevel>' || { echo "ERROR: cannot cd to recorded toplevel; re-run setup for a new archive or stop" >&2; exit 1; }` (paste the path inside the single quotes; escape an embedded single quote as `'\''`)
 with the `toplevel=` path echoed at setup when it
 is non-empty (a drifted cwd re-attaches to the wrong repo; in fallback

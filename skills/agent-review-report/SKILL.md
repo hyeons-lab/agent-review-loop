@@ -378,7 +378,7 @@ Every reviewer prompt must include:
   is not evidence for behavior. Every finding states its evidence type:
   `ran` (command plus result), `trace` (an explicit step-by-step schedule or
   call sequence with a `file:line` for every step, the accepted form for
-  concurrency and ordering defects), or `read`. A `bug` or `correctness`
+  concurrency and ordering defects that cannot be run cheaply), or `read`. A `bug` or `correctness`
   finding backed only by `read` is reported as `unreproduced` in the
   synthesis, never dropped silently.
 - Exact paths and bounded search: give the absolute path of every file the
@@ -539,7 +539,8 @@ Before the round's spawn, create one fresh empty
   `$rootcanon/agent-review-report-comment.` (an empty `$real` refuses
   everything).
 - The finding format: `SEVERITY | file_path:line_number | one-line
-  description | why it matters`, with `SEVERITY` in `bug`, `correctness`,
+  description | why it matters | class=<slug> | evidence=<ran, trace, or
+  read>`, with `SEVERITY` in `bug`, `correctness`,
   `convention`, `quality`, or `nitpick`. Every non-nitpick needs a hazard
   explanation and a concrete fix (before and after code), not a generic
   summary. A reviewer with nothing to report returns exactly `NO FINDINGS`.
