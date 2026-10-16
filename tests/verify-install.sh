@@ -1920,6 +1920,38 @@ check "prc annotations badshape named" grep -q 'check-runs parse failed' "${LOG_
 check "prc annotations badjson named" grep -q 'check-runs parse failed' "${LOG_DIR}/split-prc-ann-badjson.err"
 check "prc annotations badann named" grep -q 'annotations payload invalid for check run 101' "${LOG_DIR}/split-prc-ann-badann.err"
 
+# Convergence features of agent-review-loop (section 5 protocol and section 2).
+LOOP_SKILL="${BUNDLE}/skills/agent-review-loop/SKILL.md"
+REPORT_SKILL="${BUNDLE}/skills/agent-review-report/SKILL.md"
+for anchor in \
+  '### Convergence phase and severity gate' \
+  '### Finding provenance and the plateau rule' \
+  '### Redundancy and the residual-defect estimate' \
+  '### Effort routing per scope' \
+  '#### Tooling ladder' \
+  '#### Unreproduced findings' \
+  '#### Coverage ledger and sharding' \
+  '### Step 2b: Class sweep across scopes'; do
+  check "convergence anchor: ${anchor}" grep -q -F -- "${anchor}" "${LOOP_SKILL}"
+done
+check "convergence: all-severities escape hatch" grep -q -F 'all-severities' "${LOOP_SKILL}"
+check "convergence: gate severities named" grep -q -F '**Gate severities**: `bug`, `correctness`, and `convention`' "${LOOP_SKILL}"
+check "convergence: backlog file named" grep -q -F '$rounds_dir/backlog.md' "${LOOP_SKILL}"
+check "convergence: class ledger named" grep -q -F '$rounds_dir/classes.md' "${LOOP_SKILL}"
+check "convergence: coverage ledger named" grep -q -F '$rounds_dir/coverage.tsv' "${LOOP_SKILL}"
+check "convergence: sweeps file named" grep -q -F '$rounds_dir/sweeps.md' "${LOOP_SKILL}"
+check "convergence: tools file named" grep -q -F '$rounds_dir/tools.md' "${LOOP_SKILL}"
+check "convergence: Chapman estimate formula" grep -q -F 'N = (n1+1)(n2+1)/(m+1) - 1' "${LOOP_SKILL}"
+check "convergence: Backlog Only class" grep -q -F '**Backlog Only**' "${LOOP_SKILL}"
+check "convergence: plateau never finishes alone" grep -q -F 'Never finish on your own' "${LOOP_SKILL}"
+check "convergence: step 6 lines present" test "$(grep -c -E '^- \*\*(Backlog|Provenance|Redundancy|Unreproduced|Sweeps|Routing)\*\*:' "${LOOP_SKILL}")" = "6"
+check "convergence: evidence types in loop" grep -q -F '`trace` (an explicit' "${LOOP_SKILL}"
+check "convergence: evidence types in report" grep -q -F '`trace` (an explicit' "${REPORT_SKILL}"
+check "convergence: tool evidence mirrored in report" grep -q -F 'Tool evidence:' "${REPORT_SKILL}"
+check "convergence: no em dash in loop skill" test "$(grep -c "$(printf '\342\200\224')" "${LOOP_SKILL}" || true)" = "0"
+check "convergence: no em dash in report skill" test "$(grep -c "$(printf '\342\200\224')" "${REPORT_SKILL}" || true)" = "0"
+check "convergence: pillar names untouched" test "$(grep -c -E '^[1-8]\. (Functional Correctness, Logic & Edge Cases|Security, Authentication & Input Sanitization|Concurrency, Asynchrony & Lifecycle Management|Error Handling, Resilience & Diagnostics|Interface Contracts, API Design & Compatibility|Performance, Resource Efficiency & Scalability|Code Simplification, Clean Architecture & Maintainability|Testing, Observability & Verification Invariants)$' "${LOOP_SKILL}")" = "8"
+
 echo
 echo "RESULT: ${pass} passed, ${fail} failed"
 test "${fail}" = "0"

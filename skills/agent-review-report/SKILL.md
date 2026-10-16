@@ -342,7 +342,7 @@ original window plus grace plus the replacement window plus grace.
 | Antigravity/Gemini | `invoke_subagent` with `TypeName` self or research and a distinct `Role` per reviewer | the call blocks until every reviewer in the round has reported; proceed only when all reports are in |
 | Any other runtime | Sequential fallback: run one review pass per lens yourself, re-reading the diff fresh for each pass so earlier passes never narrow later ones | all passes complete before synthesizing |
 
-<!-- Mirrored with skills/agent-review-loop/SKILL.md: keep reviewer prompt bullets in sync; intended differences only: round-scope bullet, loop-only bullets-filed bullet, heartbeat naming/prefix, diff section ref plus PR drift line, guidance base-pillars ref. -->
+<!-- Mirrored with skills/agent-review-loop/SKILL.md: keep reviewer prompt bullets in sync; intended differences only: round-scope bullet, loop-only bullets-filed bullet, loop-only finding-label fields (origin, newClass) and the shard-ranges bullet, heartbeat naming/prefix, diff section ref plus PR drift line, guidance base-pillars ref. -->
 Every reviewer prompt must include:
 
 - The scratch path of the filtered diff saved in section 1, plus its line
@@ -359,6 +359,15 @@ Every reviewer prompt must include:
   flags a severe hazard clearly owned by another lens in one line
   shaped `FLAG | lens <n> | file_path:line_number | one-line hazard`,
   so the overlap is visible before synthesis.
+- Finding labels: every finding carries a `class` (a short kebab-case slug
+  naming the defect class, not the instance) so synthesis can group
+  recurring classes across lenses.
+- Tool evidence: when the repo already supports deeper checks (coverage for
+  the changed files, mutation testing, a strict lint profile, sanitizers),
+  run them once before the reviewers spawn, bounded by a 10 minute timeout
+  each and never installing anything, and hand the summary to every
+  reviewer; record skipped tools and why in the report header. The
+  `agent-review-loop` skill defines the full per-language ladder.
 - A read-only rule: reviewers report findings and edit nothing.
 - An execution rule: behavior claims must be checked by running the repo's
   own tests or a minimal reproduction, quoted as command plus result. A
@@ -366,7 +375,12 @@ Every reviewer prompt must include:
   test fails with the behavior present without the guard; for fixes with
   no guard to remove, replicate the old and new logic in a scratch probe
   outside the repo and show the old fails while the new passes. Reading alone
-  is not evidence for behavior.
+  is not evidence for behavior. Every finding states its evidence type:
+  `ran` (command plus result), `trace` (an explicit step-by-step schedule or
+  call sequence with a `file:line` for every step, the accepted form for
+  concurrency and ordering defects), or `read`. A `bug` or `correctness`
+  finding backed only by `read` is reported as `unreproduced` in the
+  synthesis, never dropped silently.
 - Exact paths and bounded search: give the absolute path of every file the
   reviewer must read (diff, pillars, learnings files, repo guidance), so
   nothing needs locating. The reviewer must not run unbounded filesystem

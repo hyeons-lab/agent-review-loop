@@ -19,7 +19,7 @@ Make `agent-review-loop` converge faster: fewer repeated rounds, fewer defects i
 - [x] 6 coverage ledger and sharding
 - [x] 7 redundancy and capture-recapture estimate
 - [x] 8 effort routing
-- [ ] 9 mirrors, tests, docs, dogfood
+- [x] 9 mirrors, tests, docs, dogfood
 
 ## What Changed
 
@@ -32,6 +32,7 @@ Make `agent-review-loop` converge faster: fewer repeated rounds, fewer defects i
 2026-10-15T19:48-0700 skills/agent-review-loop/SKILL.md: coverage ledger (coverage.tsv, READ lines, hash invalidation), coverage debt, sharding above 1200 lines or 12 files, 24-reviewer budget with debt rotation, finish only with zero debt, Coverage entry ledger summary.
 2026-10-15T19:50-0700 skills/agent-review-loop/SKILL.md: redundancy (verification twin by default, redundancy 2 optional), independence rules, Chapman residual estimate, use in stop proposals, step 2 twin gate, step 6 Redundancy line.
 2026-10-15T19:50-0700 skills/agent-review-loop/SKILL.md: per-scope effort routing (floor stays the chosen effort; scopes routed to max by user hot list, size over 1500 lines, fix-induced churn, risky areas), Section 2 fixed-effort wording, step 6 Routing line.
+2026-10-15T19:54-0700 skills/agent-review-report/SKILL.md (evidence types, class label, tool evidence mirrored; mirror comments updated in both skills), tests/verify-install.sh (25 convergence pins, mutation-checked), README.md (new arguments and Converging faster section).
 
 ## Decisions
 
@@ -45,6 +46,7 @@ Make `agent-review-loop` converge faster: fewer repeated rounds, fewer defects i
 2026-10-15T19:48-0700 Reviewers report the ranges they read; the ledger invalidates a range when its text changes; large diffs shard by module and the next round prioritizes unread or changed code. A loop may finish only after a full round over every shard with zero coverage debt.
 2026-10-15T19:50-0700 A loop finishes only when two independent reviewer sets agree. The overlap between the sets gives a Chapman estimate of how many gate-severity defects remain, reported as a lower bound and used to inform, never to end, the loop.
 2026-10-15T19:50-0700 Effort stays the floor for every scope; hot, very large, high-churn or high-risk scopes are raised to max. Routing only raises, and a promoted scope restarts its lens partition with a full round.
+2026-10-15T19:54-0700 Mutation check: removing a heading and the Chapman formula each failed a pin, then the file was restored. Suite: 1322 passed.
 
 ## Commits
 
@@ -56,4 +58,5 @@ Make `agent-review-loop` converge faster: fewer repeated rounds, fewer defects i
 f79086a: feat(skills): sweep each found defect class across every scope
 0cbdf4d: feat(skills): add a coverage ledger and diff sharding
 fafb023: feat(skills): add independent twin reviewers and a residual-defect estimate
-HEAD: feat(skills): route risky or large scopes to max effort
+581aaa1: feat(skills): route risky or large scopes to max effort
+HEAD: docs(skills): mirror convergence rules, pin them in tests, document them

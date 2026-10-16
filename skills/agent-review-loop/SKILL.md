@@ -466,7 +466,7 @@ window plus grace.
 | Antigravity/Gemini | `invoke_subagent` with `TypeName` self or research and a distinct `Role` per reviewer | the call blocks until every reviewer in the round has reported; proceed only when all reports are in |
 | Any other runtime | Sequential fallback: run one review pass per lens yourself, re-reading the diff fresh for each pass so earlier passes never narrow later ones | all passes complete before classifying |
 
-<!-- Mirrored with skills/agent-review-report/SKILL.md: keep reviewer prompt bullets in sync; intended differences only: round-scope bullet, loop-only bullets-filed bullet, heartbeat naming/prefix, diff section ref plus PR drift line, guidance base-pillars ref. -->
+<!-- Mirrored with skills/agent-review-report/SKILL.md: keep reviewer prompt bullets in sync; intended differences only: round-scope bullet, loop-only bullets-filed bullet, loop-only finding-label fields (origin, newClass) and the shard-ranges bullet, heartbeat naming/prefix, diff section ref plus PR drift line, guidance base-pillars ref. -->
 Every reviewer prompt must include:
 
 - The scratch path of the filtered diff saved in section 4, plus its line
