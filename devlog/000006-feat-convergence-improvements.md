@@ -12,7 +12,7 @@ Make `agent-review-loop` converge faster: fewer repeated rounds, fewer defects i
 
 - [x] Plan and devlog
 - [x] 1 convergence phase and severity gate
-- [ ] 2 provenance labels and the new-class stop rule
+- [x] 2 provenance labels and the new-class stop rule
 - [ ] 3 executable evidence and the tooling ladder
 - [ ] 4 fix-check regression hunter and fixer class sweep
 - [ ] 5 cross-scope class sweep
@@ -25,14 +25,17 @@ Make `agent-review-loop` converge faster: fewer repeated rounds, fewer defects i
 
 2026-10-15T19:41-0700 devlog/plans/000006-01-convergence-improvements.md, devlog/000006-feat-convergence-improvements.md: plan and devlog.
 2026-10-15T19:43-0700 skills/agent-review-loop/SKILL.md: convergence phase and severity gate (section 2 subsection; step 2 Backlog Only class; step 3 gate-severity scope; step 6 Backlog line; finishing-up backlog disposition; commit invariant).
+2026-10-15T19:44-0700 skills/agent-review-loop/SKILL.md: finding provenance labels (class, origin, newClass), run class ledger, plateau rule, reviewer-prompt bullet, step 6 Provenance line, step 2 plateau handling.
 
 ## Decisions
 
 2026-10-15T19:41-0700 Branch from origin/main in a worktree; the main checkout has unrelated untracked devlog files from earlier work that this branch does not touch.
 2026-10-15T19:41-0700 Number the devlog 000006 (highest on main is 000005); renumber on merge conflict.
 2026-10-15T19:43-0700 Quality and nitpick findings are backlogged during convergence and applied once in a polish pass, because fix churn on low-severity items was feeding new correctness findings. `all-severities` keeps the old behavior.
+2026-10-15T19:44-0700 Plateau means two consecutive full rounds with no fix-induced finding and no new gate-severity class. It asks the user to choose and never finishes the loop or reports a clean review on its own.
 
 ## Commits
 
 42eea9f: docs: plan the convergence improvements for agent-review-loop
-HEAD: feat(skills): add convergence phase and severity gate to agent-review-loop
+3f6a130: feat(skills): add convergence phase and severity gate to agent-review-loop
+HEAD: feat(skills): add finding provenance labels and the plateau rule

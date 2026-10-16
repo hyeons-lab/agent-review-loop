@@ -144,6 +144,38 @@ the older behavior of fixing every finding in every round.
   (it already ignores findings at or below `quality`), and the round cap
   counts every round, polish confirmations included.
 
+### Finding provenance and the plateau rule
+
+A raw finding count mixes real defects with nitpicks and cannot say why a
+loop is not converging. Every finding therefore carries three labels, and
+the round summary reports them:
+
+- `class`: a short kebab-case slug naming the defect class, not the
+  instance (for example `check-then-act`, `permanent-fault-typed-retryable`,
+  `persist-after-publish`). Reuse an existing slug from the run ledger when
+  the class matches.
+- `origin`: `original` (the defective lines predate this loop run),
+  `fix-induced` (the defective lines were added or changed by a step 3 edit
+  of this run, or the fix is incomplete or wrong, from the round summaries'
+  Fixes applied lists or the run's fix commits), or `recurrence` (a class
+  already in the ledger, found in a place not yet swept).
+- `newClass`: true when the slug is absent from the run ledger.
+
+Synthesis owns the labels: it normalizes slugs across reviewers, settles
+`origin` against the code, and appends each class to the run ledger at
+`$rounds_dir/classes.md` (one line per class: slug, first round, and the
+count per round). Without synthesis (low and medium effort, or one report),
+the main agent does the same from the reports.
+
+**Plateau rule.** Counts alone never end a loop; a clean full round still
+does (step 2). When two consecutive full rounds, each with every lens
+reported, have zero `fix-induced` findings and no `newClass` finding of
+gate severity, the loop has plateaued: stop fixing and ask the user whether
+to finish with the remaining gate-severity findings recorded as known
+issues, or to continue. Never finish on your own, and never treat a
+plateau as a clean review in the summary. Any `fix-induced` finding or new
+gate-severity class resets the plateau count to zero.
+
 ## 3. Review Criteria: Base Pillars Plus Shared Learnings
 
 Two tiers, same contract in every runtime:
@@ -402,6 +434,11 @@ Every reviewer prompt must include:
   resolve it as reviewer disagreement (step 2) against the code before
   classifying: a confirmed hazard counts as an actionable finding from
   the owning lens.
+- Finding labels: every finding carries `class`, `origin`, and `newClass`
+  as defined in section 2 (Finding provenance and the plateau rule), plus
+  the run ledger's existing class slugs to reuse, and, after the first
+  round, the list of Fixes applied so far so `fix-induced` can be told from
+  `original`.
 - A read-only rule: reviewers report findings and edit nothing.
 - An execution rule: behavior claims must be checked by running the repo's
   own tests or a minimal reproduction, quoted as command plus result. A
@@ -628,6 +665,11 @@ with a missing lens: the next round narrows to the missing lenses (step 7); a na
 follow-up that goes clean or nitpicks-only still owes confirmation per
 the subset rule.
 
+If the plateau rule (section 2) fires after an Actionable full round, apply
+that round's gate-severity fixes as usual, then ask the user to choose
+between finishing with the known issues and continuing; do not start the
+next round until they answer.
+
 Treat reviewer disagreement as signal, not noise: if two reviewers
 contradict each other, resolve the conflict against the code before fixing.
 
@@ -783,6 +825,10 @@ Report between rounds, briefly:
   `synthesis`, covered vs uncovered per the same five outcomes, operative
   file per the same file rules. A recovered
   stall stays listed; it never collapses back to `full`.
+- **Provenance**: counts by `origin` (original, fix-induced, recurrence),
+  the new classes this round (slugs), and the plateau count (consecutive
+  full rounds with zero fix-induced findings and no new gate-severity
+  class).
 - **Backlog**: findings of backlog severity recorded this round and the
   running backlog total (convergence phase), or `n/a` under
   `all-severities`.
