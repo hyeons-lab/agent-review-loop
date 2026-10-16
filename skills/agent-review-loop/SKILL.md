@@ -32,8 +32,9 @@ that same table.
    command flags, code, and quoted output. In prose, use colons, commas,
    semicolons, parentheses, or separate sentences.
 3. **Commit invariants**:
-   - Only commit at the end of the entire loop, after reaching a clean review
-     or nitpicks-only state.
+   - Only commit at the end of the entire loop, after reaching a clean review,
+     a nitpicks-only state, or (convergence phase, section 2) a backlog-only
+     state whose polish pass has been applied and checked.
    - Never commit, push, tag, or amend without explicit human approval in this
      session. Finishing the loop is not approval.
    - Follow the repository's own commit convention (repo docs win over any
@@ -111,6 +112,37 @@ lens numbers do not map onto the new partition).
 
 When your runtime caps concurrent subagents, run the round's reviewers in
 waves inside the same round. The round's coverage stays fixed; only the scheduling bends.
+
+### Convergence phase and severity gate
+
+Fix churn feeds the next round: every edit is new surface, and a fix pass
+that also rewrites quality and nitpick items regularly introduces the next
+round's correctness findings. So the loop runs in a **convergence phase**
+by default, and the argument `all-severities` (also `fix-all`) restores
+the older behavior of fixing every finding in every round.
+
+- **Gate severities**: `bug`, `correctness`, and `convention`. Only these
+  are fixed during the convergence phase.
+- **Backlog severities**: `quality` and `nitpick`. During the convergence
+  phase they are recorded, not fixed. Append each to the run backlog at
+  `$rounds_dir/backlog.md` (one line: round, lens, severity, `file:line`,
+  title, secrets redacted per the redaction invariant) and do not edit code
+  for them. A finding of backlog severity that a gate-severity fix directly
+  touches is fixed with that fix; anything else waits.
+- **Severity honesty**: a real wrong behavior is `bug` or `correctness`
+  even when rare. Never downgrade a behavior defect to `quality` to move it
+  into the backlog, and reviewers and synthesis must not do it either.
+- **Polish pass**: when a full round in which every lens reported has no
+  gate-severity finding (step 2: Clean, Nitpicks Only, or Backlog Only),
+  apply the backlog in one final pass: skip any item that would need the
+  step 3 stop rule, check the edits with step 4, run the step 5 gate. If
+  the polish edits touch executable code (anything beyond comments and
+  docs), run one more full confirmation round; a gate-severity finding
+  there returns the loop to the convergence phase, and the polish
+  restarts from the then-remaining backlog.
+- **Streak and cap**: the quiet-round streak scoring above is unchanged
+  (it already ignores findings at or below `quality`), and the round cap
+  counts every round, polish confirmations included.
 
 ## 3. Review Criteria: Base Pillars Plus Shared Learnings
 
@@ -558,8 +590,16 @@ finding inherits its source lens for this rule.
 - **Clean**: every reporting reviewer in the round returned `NO FINDINGS`.
 - **Nitpicks Only**: every finding has `nitpick` severity (cosmetic
   formatting, doc phrasing, or trivial preferences only).
-- **Actionable**: anything else (correctness risks, safety hazards,
-  unbounded waits, leaks, contract drift). A missing lens never changes
+- **Backlog Only** (convergence phase): every finding has `quality` or
+  `nitpick` severity. Nothing is fixed this round; the findings go to the
+  run backlog (section 2) and the round is treated like Nitpicks Only for
+  every rule below, with the polish pass in place of the final nitpick
+  pass. With `all-severities`, this class does not exist: such a round is
+  Actionable.
+- **Actionable**: anything else, meaning at least one gate-severity finding
+  (correctness risks, safety hazards, unbounded waits, leaks, contract
+  drift). In the convergence phase only the gate-severity findings are
+  fixed; the rest are backlogged. A missing lens never changes
   the classification by itself; it routes via the missing-lens branches
   below and the dirty set in step 7.
 
@@ -567,22 +607,24 @@ If **Actionable**: apply the fixes (step 3), then the fix check (step 4)
 and verification gate (step 5) as usual; the next round narrows to the
 dirty lenses (step 7).
 
-If **Clean** or **Nitpicks Only** after a subset round: the narrowed
+If **Clean**, **Nitpicks Only**, or **Backlog Only** after a subset round: the narrowed
 lenses are clean, but the sitting-out pillars have not been re-checked
 against the latest fixes, so run one full confirmation round next (all
 lenses at the loop's effort) instead of finishing.
 
-If **Clean** or **Nitpicks Only** after a full round (round 1, a
-confirmation round, or any round that ran every lens per step 7) in
-which every lens reported: apply safe nitpicks from any round in one
-final pass, run
+If **Clean**, **Nitpicks Only**, or **Backlog Only** after a full round
+(round 1, a confirmation round, or any round that ran every lens per
+step 7) in which every lens reported: apply the polish pass (section 2;
+in `all-severities` mode, the safe nitpicks from any round) in one final
+pass, run
 the step 4 fix check on those edits (a main-agent direct check
-suffices), then the full verification gate, the final pillar sweep
-(section 6), and proceed to Finishing Up. A subset-scheduled round that
-ran every lens needs no confirmation.
+suffices), then the full verification gate; when the polish edits touch
+executable code, run the one further full confirmation round section 2
+requires before the final pillar sweep (section 6) and Finishing Up. A
+subset-scheduled round that ran every lens needs no confirmation.
 
-If **Clean** or **Nitpicks Only** after a full round with a missing
-lens: the next round narrows to the missing lenses (step 7); a narrowed
+If **Clean**, **Nitpicks Only**, or **Backlog Only** after a full round
+with a missing lens: the next round narrows to the missing lenses (step 7); a narrowed
 follow-up that goes clean or nitpicks-only still owes confirmation per
 the subset rule.
 
@@ -591,8 +633,9 @@ contradict each other, resolve the conflict against the code before fixing.
 
 ### Step 3: Apply fixes
 
-Make precise, focused edits for every actionable item with your
-environment's file editing tools. Keep each fix minimal and
+Make precise, focused edits for every actionable item (in the convergence
+phase, every gate-severity item; section 2 sends the rest to the backlog)
+with your environment's file editing tools. Keep each fix minimal and
 behavior-scoped; do not refactor around a finding. If a fix is large or
 structurally risky (broad refactor, API change, control flow with blast
 radius), stop and ask the user before applying it. The stop report states
@@ -740,6 +783,9 @@ Report between rounds, briefly:
   `synthesis`, covered vs uncovered per the same five outcomes, operative
   file per the same file rules. A recovered
   stall stays listed; it never collapses back to `full`.
+- **Backlog**: findings of backlog severity recorded this round and the
+  running backlog total (convergence phase), or `n/a` under
+  `all-severities`.
 - **Fixes applied**: files and what changed.
 - **Verification status**: gates run and their results.
 - **Learnings filed**: pillar bullets added or refined this round (with
@@ -972,8 +1018,10 @@ Follow this exact sequence whenever filing learnings:
 ## 7. Finishing Up
 
 1. **Cumulative summary**: total rounds, every issue/warning/optimization
-   addressed across rounds, verification results, and which pillar bullets
-   were added or refined per round (with pillar numbers).
+   addressed across rounds, the backlog disposition (items applied in the
+   polish pass versus items left, each listed), verification results, and
+   which pillar bullets were added or refined per round (with pillar
+   numbers).
 2. **Approval for commit and push**: do not commit or push on your own.
    Present the proposed commit message in the repo's convention and ask for
    explicit confirmation first.
