@@ -70,9 +70,12 @@ Default is **`high`**.
   plus synthesis in a full round).
 
 The chosen effort is **fixed for the entire loop** except for the
-user-approved quiet-round step-down below. Effort sets the review depth
+user-approved quiet-round step-down below and the per-scope routing
+below. Effort sets the review depth
 per pillar and the full-round fan-out; it never escalates, and it never
-de-escalates except through that step-down. Coverage, however, narrows
+de-escalates except through that step-down; per-scope routing raises the
+depth for named or risky scopes only and is coverage routing, not an
+escalation of the loop. Coverage, however, narrows
 between rounds: round 1 always runs every lens, later rounds rerun only
 the dirty set from the previous round (section 5, steps 1 and 7), and
 the loop finishes only after a full round goes clean or nitpicks-only,
@@ -112,6 +115,29 @@ lens numbers do not map onto the new partition).
 
 When your runtime caps concurrent subagents, run the round's reviewers in
 waves inside the same round. The round's coverage stays fixed; only the scheduling bends.
+
+### Effort routing per scope
+
+Uniform effort spends the same review on a trivial change and on a huge,
+risky one. The loop's chosen effort is the **floor** for every scope (a
+single diff, or each PR, package, or worktree in a multi-scope run), and a
+scope is routed up to `max` (one reviewer per pillar) when any holds:
+
+- the user names it (argument `hot <path or scope>...`);
+- its filtered diff exceeds 1500 changed lines;
+- two or more of its findings in the last two rounds had `origin`
+  `fix-induced` (it is being changed faster than it is being understood);
+- it changes persistence, migrations, authentication or session handling,
+  cryptography, concurrency primitives, or a wire or storage format, and the
+  loop's floor is below `high`.
+
+Routing only raises: a scope never drops below the floor, and the
+quiet-round step-down still applies to the floor, not to a routed scope.
+A scope has one lens partition at a time: when a scope is promoted, discard
+its old lens mapping (carrying its fixed locations as must-recheck) and run
+its next round full under the new partition, exactly as the step-down rule
+does. Record each routed scope and the reason in the round summary's
+Routing line, and in the run ledger.
 
 ### Convergence phase and severity gate
 
@@ -1027,6 +1053,7 @@ Report between rounds, briefly:
   `synthesis`, covered vs uncovered per the same five outcomes, operative
   file per the same file rules. A recovered
   stall stays listed; it never collapses back to `full`.
+- **Routing**: scopes running above the floor and why, or `none`.
 - **Sweeps**: classes swept this round, scopes covered, and hits (or
   `none`).
 - **Unreproduced**: `bug` and `correctness` findings held back for lack of
