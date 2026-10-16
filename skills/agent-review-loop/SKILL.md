@@ -734,7 +734,8 @@ contradict each other, resolve the conflict against the code before fixing.
 Make precise, focused edits for every actionable item (in the convergence
 phase, every gate-severity item; section 2 sends the rest to the backlog)
 with your environment's file editing tools. Keep each fix minimal and
-behavior-scoped; do not refactor around a finding. If a fix is large or
+behavior-scoped; do not refactor around a finding. Before a fix counts as done, apply the
+self-critique below. If a fix is large or
 structurally risky (broad refactor, API change, control flow with blast
 radius), stop and ask the user before applying it. The stop report states
 the finding and the proposed fix, with secrets redacted per the redaction
@@ -746,6 +747,28 @@ check, otherwise append a terminal status (the five contents defined at
 the step 7 cap-stop), quote each missing lens's last progress line (same
 redaction and empty/missing rules as Finishing Up step 3) into the stop
 report, then run Finishing Up step 3.
+
+Self-critique of every fix (the fixer's duty, before step 4):
+
+- **Class sweep**: name the defect class and search the whole scope (every
+  language, every file the loop can see, and in a multi-scope run the other
+  scopes too, section 5) for sibling instances of the same pattern. Fix the
+  siblings in code this scope owns; list siblings elsewhere with
+  `file:line` for their owner. A fix that cures one instance and leaves
+  its siblings is the most common source of the next round's findings.
+- **Failure-path review**: re-read the diff for what happens on
+  cancellation, on an exception thrown half way, on a repeated or
+  concurrent call, on empty, maximum, negative, and malformed input, after
+  a restart, and on every other platform that consumes the changed type.
+  Write the test that would catch your own regression, not only the test
+  for the finding.
+- **Contract check**: for every signature, error type, constant, or limit
+  the fix changed, search every caller and every doc, plan, schema, and
+  changelog that states it, and update them in the same change.
+- **Hostile read**: read the full diff as a reviewer who expects a defect;
+  anything you would flag in someone else's change gets fixed in yours.
+  Record what the sweep and the read found, including `nothing`, in the
+  round summary's Fixes applied entry.
 
 ### Step 4: Fix check (targeted re-review)
 
@@ -796,7 +819,15 @@ credential-bearing argument, including inside the command name; never
 paste unredacted credentials into the progress file. Check three
 things: each fix addresses its finding; the fix broke none of its own
 preconditions (fast paths that bypass the fixed code, no-op contracts,
-error mappings); every new or changed test is non-vacuous. The fix-check
+error mappings); every new or changed test is non-vacuous. Then act as a
+regression hunter: assume each fix hides a defect and try to break it.
+Run a class sweep of your own (grep the scope for siblings of every fixed
+class the fixer missed) and probe each fix adversarially with a scratch
+probe or the repo's tests: cancel it half way, call it twice and
+concurrently, feed it empty and maximum input, and restart around it. List
+what could go wrong for each fix in the report, including `nothing found`
+with the probes you ran. A missed sibling or a probe that breaks the fix is
+a regression under the same budget as any other. The fix-check
 subagent may temporarily revert hunks for this proof only (never commit
 the reverted state): first snapshot the touched files under
 `<progress_dir>/snapshots/<stem>/`, `<stem>` the attempt's own
