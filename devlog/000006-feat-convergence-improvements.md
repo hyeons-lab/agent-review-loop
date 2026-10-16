@@ -17,7 +17,7 @@ Make `agent-review-loop` converge faster: fewer repeated rounds, fewer defects i
 - [x] 4 fix-check regression hunter and fixer class sweep
 - [x] 5 cross-scope class sweep
 - [x] 6 coverage ledger and sharding
-- [ ] 7 redundancy and capture-recapture estimate
+- [x] 7 redundancy and capture-recapture estimate
 - [ ] 8 effort routing
 - [ ] 9 mirrors, tests, docs, dogfood
 
@@ -30,6 +30,7 @@ Make `agent-review-loop` converge faster: fewer repeated rounds, fewer defects i
 2026-10-15T19:46-0700 skills/agent-review-loop/SKILL.md: fixer self-critique (class sweep, failure-path review, contract check, hostile read) in step 3; fix-check regression-hunter duties (own class sweep, adversarial probes, what-could-go-wrong list) in step 4.
 2026-10-15T19:47-0700 skills/agent-review-loop/SKILL.md: step 2b class sweep across scopes (derive sweep from each gate-severity class, run over every scope, sweeps.md, recurrence findings tagged sweep), step 2 Actionable pointer, step 6 Sweeps line.
 2026-10-15T19:48-0700 skills/agent-review-loop/SKILL.md: coverage ledger (coverage.tsv, READ lines, hash invalidation), coverage debt, sharding above 1200 lines or 12 files, 24-reviewer budget with debt rotation, finish only with zero debt, Coverage entry ledger summary.
+2026-10-15T19:50-0700 skills/agent-review-loop/SKILL.md: redundancy (verification twin by default, redundancy 2 optional), independence rules, Chapman residual estimate, use in stop proposals, step 2 twin gate, step 6 Redundancy line.
 
 ## Decisions
 
@@ -41,6 +42,7 @@ Make `agent-review-loop` converge faster: fewer repeated rounds, fewer defects i
 2026-10-15T19:46-0700 A fix that cures one instance and leaves siblings, or breaks on cancel, repeat, empty or maximum input, is the main source of next-round findings. Fixers must sweep and self-review; the fix check now actively tries to break each fix and counts missed siblings as regressions.
 2026-10-15T19:47-0700 A class found in one place is searched for everywhere in the same round, before fixes: the whole repo for a single-diff run, every scope for a multi-scope run. Hits become recurrence findings in their owning scope.
 2026-10-15T19:48-0700 Reviewers report the ranges they read; the ledger invalidates a range when its text changes; large diffs shard by module and the next round prioritizes unread or changed code. A loop may finish only after a full round over every shard with zero coverage debt.
+2026-10-15T19:50-0700 A loop finishes only when two independent reviewer sets agree. The overlap between the sets gives a Chapman estimate of how many gate-severity defects remain, reported as a lower bound and used to inform, never to end, the loop.
 
 ## Commits
 
@@ -50,4 +52,5 @@ Make `agent-review-loop` converge faster: fewer repeated rounds, fewer defects i
 2710714: feat(skills): add the tooling ladder and executable-evidence rule
 6583043: feat(skills): add fixer self-critique and a regression-hunting fix check
 f79086a: feat(skills): sweep each found defect class across every scope
-HEAD: feat(skills): add a coverage ledger and diff sharding
+0cbdf4d: feat(skills): add a coverage ledger and diff sharding
+HEAD: feat(skills): add independent twin reviewers and a residual-defect estimate

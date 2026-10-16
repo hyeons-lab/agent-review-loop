@@ -167,6 +167,42 @@ Synthesis owns the labels: it normalizes slugs across reviewers, settles
 count per round). Without synthesis (low and medium effort, or one report),
 the main agent does the same from the reports.
 
+### Redundancy and the residual-defect estimate
+
+"No findings this round" only says this set of reviewers found nothing. To
+say how much is likely left, run a second, independent set of reviewers and
+compare what the two sets found.
+
+- **Argument**: `redundancy 2` runs a twin set in every full round;
+  `redundancy 1` runs one set always. The default is a **verification
+  twin**: when a full round with every lens reported comes back without
+  gate-severity findings (Clean, Nitpicks Only, or Backlog Only), run one
+  independent twin round before the polish pass or finishing, because a
+  loop is only done when two independent sets agree.
+- **Independence**: twin reviewers get the same scope, shards, pillars, and
+  learnings, but never the first set's findings, reports, or counts. Vary
+  the reading order (for example shards and files in reverse order) and
+  tell them to find what a first pass would plausibly miss, not to confirm.
+  Twin reviewers follow every heartbeat, stall, and retry rule here, with
+  progress stems prefixed `r<N>-twin-` (for example `r3-twin-reviewer2`),
+  and count toward the reviewer budget.
+- **Matching**: synthesis (or the main agent) judges which twin findings
+  are the same defect as a first-set finding: same `file`, same region, same
+  `class`.
+- **Estimate**: with `n1` and `n2` gate-severity findings from the two sets
+  and `m` matches, report the Chapman estimate of the total,
+  `N = (n1+1)(n2+1)/(m+1) - 1`, and the residual
+  `N - (n1 + n2 - m)` (the number of gate-severity defects likely not yet
+  found), rounded to one decimal. Both sets empty means `N = 0`. Treat the
+  residual as a lower bound: reviewers are not equally likely to find every
+  defect, which makes the estimate optimistic. Report the raw `n1`, `n2`,
+  `m` as well.
+- **Use**: a twin that finds a gate-severity finding the first set missed
+  makes the round Actionable (fix, then continue). A residual of 3 or more
+  advises continuing even when the plateau rule fired; below 1 supports
+  finishing. The estimate informs the user and the stop proposal; it never
+  finishes the loop by itself.
+
 **Plateau rule.** Counts alone never end a loop; a clean full round still
 does (step 2). When two consecutive full rounds, each with every lens
 reported, have zero `fix-induced` findings and no `newClass` finding of
@@ -752,7 +788,10 @@ lenses at the loop's effort) instead of finishing.
 
 If **Clean**, **Nitpicks Only**, or **Backlog Only** after a full round
 (round 1, a confirmation round, or any round that ran every lens per
-step 7) in which every lens reported: apply the polish pass (section 2;
+step 7) in which every lens reported: run the verification twin first
+when redundancy applies (section 2; a twin round that finds a
+gate-severity finding makes the loop Actionable again), then apply the
+polish pass (section 2;
 in `all-severities` mode, the safe nitpicks from any round) in one final
 pass, run
 the step 4 fix check on those edits (a main-agent direct check
@@ -993,6 +1032,8 @@ Report between rounds, briefly:
 - **Unreproduced**: `bug` and `correctness` findings held back for lack of
   a probe or trace (title, `file:line`, owning lens), carried as
   must-recheck, or `none`.
+- **Redundancy**: when a twin ran, `n1`, `n2`, `m`, the Chapman estimate,
+  and the residual (section 2), or `none`.
 - **Provenance**: counts by `origin` (original, fix-induced, recurrence),
   the new classes this round (slugs), and the plateau count (consecutive
   full rounds with zero fix-induced findings and no new gate-severity
