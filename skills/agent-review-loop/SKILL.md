@@ -295,8 +295,8 @@ set or a confirmation still owed (step 7).
 
 ### Step 1: Run the review round
 
-Spawn the review subagents for the chosen effort, then collect every report
-before proceeding. Each reviewer audits the filtered diff plus the
+Run the tooling ladder (below) first, then spawn the review subagents for
+the chosen effort, then collect every report before proceeding. Each reviewer audits the filtered diff plus the
 surrounding source it needs (callers, types, tests, configs) against the
 **8 Canonical Thematic Pillars**:
 
@@ -439,13 +439,20 @@ Every reviewer prompt must include:
   the run ledger's existing class slugs to reuse, and, after the first
   round, the list of Fixes applied so far so `fix-induced` can be told from
   `original`.
+- Tool evidence: the tooling ladder's summary for this scope (below), as
+  input to the audit; tool output is evidence, not a finding by itself.
 - A read-only rule: reviewers report findings and edit nothing.
 - An execution rule: behavior claims must be checked by running the repo's
   own tests or a minimal reproduction, quoted as command plus result. A
   claim that a test pins a behavior must be proven non-vacuous: show the
   test fails with the behavior present without the guard; for fixes with
   no guard to remove, replicate the old and new logic in a scratch probe
-  outside the repo and show the old fails while the new passes. Reading alone is not evidence for behavior.
+  outside the repo and show the old fails while the new passes. Reading alone is not evidence for behavior. Every finding states its
+  evidence type: `ran` (command plus result), `trace` (an explicit
+  step-by-step schedule or call sequence with a `file:line` for every step,
+  the accepted form for concurrency and ordering defects that cannot be run
+  cheaply), or `read`. A `bug` or `correctness` finding backed only by
+  `read` is `unreproduced` (see below).
 - Exact paths and bounded search: give the absolute path of every file the
   reviewer must read (diff, pillars, learnings files, repo guidance), so
   nothing needs locating. The reviewer must not run unbounded filesystem
@@ -616,6 +623,55 @@ gap, not a de-dup candidate), the reporting lens keeps it: that lens is
 already dirty through this finding, and re-runs with the area added to
 its assignment next round; the round summary notes the gap. A synthesis
 finding inherits its source lens for this rule.
+
+#### Tooling ladder
+
+Reviewers re-find the same classes round after round because nothing runs
+the deeper tools for them. Once per full round and per scope, before the
+reviewers spawn, detect and run the deeper checks the repo already supports
+and hand the summary to every reviewer as Tool evidence:
+
+- **Rules**: detect, never install or add a dependency silently; bound each
+  rung with a timeout (10 minutes unless the repo documents otherwise); run
+  nothing outside the worktree; record every rung as `ran`, or `skipped`
+  with the reason, in `$rounds_dir/tools.md` and in the round's Coverage
+  entry. Rerun only the rungs whose inputs changed since the last round.
+- **All languages**: the repo's strictest lint profile it already defines,
+  a secret scanner when present, and shell scripts through shellcheck when
+  installed.
+- **Rust**: clippy (including the repo's extra lint groups), the tests for
+  touched crates under `--release` when they gate on debug assertions,
+  `cargo llvm-cov` for the changed files, `cargo mutants --in-diff` (or the
+  repo's mutation tool) over the changed code, miri for crates with
+  `unsafe`, and any existing proptest or fuzz targets.
+- **JVM and Android**: detekt and Android lint when configured, coverage
+  (Kover or JaCoCo) for the changed files, and PIT mutation testing when
+  configured.
+- **Swift**: `swift test --enable-code-coverage`, a build with
+  `-strict-concurrency=complete`, and swift-format or SwiftLint when
+  configured.
+- **TypeScript and JavaScript**: `tsc --noEmit` under the strictest config,
+  eslint, coverage, and Stryker when configured.
+- **Python**: mypy, ruff, `pytest --cov`, and mutmut when configured.
+
+Summarize as: changed lines or branches with no coverage, surviving mutants
+in changed code, sanitizer and strict-lint hits. A surviving mutant that
+changes behavior no test pins is a Pillar 8 finding; a coverage gap on a
+changed error path is a Pillar 4 or 8 finding; a sanitizer hit is a
+correctness finding with evidence type `ran`.
+
+#### Unreproduced findings
+
+A `bug` or `correctness` finding whose only evidence is `read` is labeled
+`unreproduced` by synthesis (or by the main agent when there is no
+synthesis). Synthesis first tries a reproduction, a probe in a scratch file
+outside the repo; a probe that shows the defect upgrades the evidence to
+`ran`. An `unreproduced` finding is not fixed and does not by itself make
+the round Actionable; list it in the round summary, carry it to the next
+round as a must-recheck item for its owning lens, and promote it to
+actionable when it is reproduced, when a second independent report (another
+reviewer or a later round) raises the same defect, or when the user accepts
+the risk of fixing it unreproduced. Never drop one silently.
 
 ### Step 2: Classify findings and check the stop condition
 
@@ -825,6 +881,9 @@ Report between rounds, briefly:
   `synthesis`, covered vs uncovered per the same five outcomes, operative
   file per the same file rules. A recovered
   stall stays listed; it never collapses back to `full`.
+- **Unreproduced**: `bug` and `correctness` findings held back for lack of
+  a probe or trace (title, `file:line`, owning lens), carried as
+  must-recheck, or `none`.
 - **Provenance**: counts by `origin` (original, fix-induced, recurrence),
   the new classes this round (slugs), and the plateau count (consecutive
   full rounds with zero fix-induced findings and no new gate-severity
