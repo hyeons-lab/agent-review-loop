@@ -49,6 +49,7 @@ Make `agent-review-loop` converge faster: fewer repeated rounds, fewer defects i
 2026-10-15T19:50-0700 Effort stays the floor for every scope; hot, very large, high-churn or high-risk scopes are raised to max. Routing only raises, and a promoted scope restarts its lens partition with a full round.
 2026-10-15T19:54-0700 Mutation check: removing a heading and the Chapman formula each failed a pin, then the file was restored. Suite: 1322 passed.
 2026-10-15T19:59-0700 An independent read of the finished skill found 16 defects in the spec (unreachable finish rule, a Chapman estimate that was always zero in default mode, a clean reviewer unable to emit coverage lines, polish and confirmation able to loop to the cap, and others). All 16 are fixed, 13 pins added; the review hand-back was verified against the cited lines before applying.
+2026-10-20T21:51-0700 Addressed the Copilot review on PR #10: removed a stray comma before the sitting-out lenses parenthetical in the Coverage round-summary bullet (skills/agent-review-loop/SKILL.md). Suite: 1335 passed, 0 failed. The check-run annotation on the PR is a GitHub runner-images platform notice, not feedback on this diff.
 
 ## Commits
 
@@ -62,4 +63,5 @@ f79086a: feat(skills): sweep each found defect class across every scope
 fafb023: feat(skills): add independent twin reviewers and a residual-defect estimate
 581aaa1: feat(skills): route risky or large scopes to max effort
 fcce433: docs(skills): mirror convergence rules, pin them in tests, document them
-HEAD: fix(skills): resolve contradictions found by the consistency review
+a16ce5b: fix(skills): resolve contradictions found by the consistency review
+HEAD: fix(skills): remove stray comma flagged in PR review

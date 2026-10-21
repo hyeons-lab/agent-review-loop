@@ -1082,7 +1082,7 @@ Report between rounds, briefly:
 - **Scope next**: dirty lenses rerunning next round and lenses sitting
   out, or `full confirmation round` when step 2 owes one, or `done`.
 - **Coverage**: `full` only when every running lens this round reported
-  over every shard with no stall, the ledger shows zero coverage debt, (sitting-out lenses are out of scope, neither reported
+  over every shard with no stall, the ledger shows zero coverage debt (sitting-out lenses are out of scope, neither reported
   nor missing) and synthesis (when spawned) reported with no stall. Also
   state the ledger summary: changed lines read by all lenses since their
   last change, and the debt shards or ranges carried forward. Otherwise
