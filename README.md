@@ -77,7 +77,7 @@ Each flag installs all four skills under its directory:
 Restart the agent (or start a new session) after installing, then invoke:
 
 ```text
-/agent-review-loop [low|medium|high|max]
+/agent-review-loop [low|medium|high|max] [all-severities] [redundancy 1|2] [hot <path>...]
 /agent-review-report [<pr_number_or_url>]
 /agent-review-pr-comments [<pr_number_or_url>]
 /agent-review-check-ci [<pr_number_or_url>]
@@ -86,6 +86,35 @@ Restart the agent (or start a new session) after installing, then invoke:
 Default effort for `agent-review-loop` is `high` (`agent-review-report`
 always runs at `max`). The agent-neutral name sits alongside any
 existing `review-fix-loop` skill without collision.
+
+## Converging faster
+
+`agent-review-loop` is built to reach a clean review in few rounds, not just
+to repeat reviews. The mechanisms (details in `SKILL.md`):
+
+- **Convergence phase** (default): rounds fix only `bug`, `correctness`, and
+  `convention` findings; `quality` and `nitpick` findings go to a backlog and
+  are applied once in a final polish pass, because fixing low-severity items
+  every round creates the next round's defects. `all-severities` restores
+  fix-everything.
+- **Evidence over opinion**: a `bug` or `correctness` finding needs a probe or
+  an explicit trace; read-only claims are held as `unreproduced`. A tooling
+  ladder runs the repo's deeper tools (coverage, mutation testing, strict
+  lints, sanitizers) once per round and feeds the results to reviewers.
+- **Self-critical fixes**: fixers sweep for sibling instances of each fixed
+  class, review failure paths, and read their own diff; the fix check tries
+  to break each fix. A class found anywhere is swept across every scope in
+  the same round.
+- **Coverage, not sampling**: reviewers report what they read; a ledger
+  invalidates ranges when they change, large diffs are sharded, and the loop
+  finishes only after a full round with no coverage debt.
+- **A defensible stop**: findings carry `class`, `origin`, and `newClass`; a
+  plateau (two full rounds with no fix-induced finding and no new
+  gate-severity class) raises a stop proposal for you, and an independent
+  twin reviewer set provides a Chapman estimate of defects likely left.
+  `redundancy 2` runs a twin every full round.
+- **Effort routing**: the chosen effort is the floor; named (`hot`), very
+  large, high-churn, or high-risk scopes are raised to `max`.
 
 ## Upgrade
 
