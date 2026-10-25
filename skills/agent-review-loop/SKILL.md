@@ -512,10 +512,9 @@ Every reviewer prompt must include:
 - The instruction to read the repo's own guidance first (`AGENTS.md`,
   `CLAUDE.md`, `GEMINI.md`, `.editorconfig`, CI workflows), the bundled base
   pillars, only the learnings slices for its own pillars, and the
-  learnings titles index covering every learnings file that exists. The
-  index lets
-  the reviewer flag another pillar's hazard without reading that pillar's
-  bullets.
+  learnings titles index covering every learnings file that exists.
+  The index lets the reviewer flag another pillar's hazard without
+  reading that pillar's bullets.
 - For rounds after the first: pass ONLY the bullets newly added or refined
   during THIS review loop run (tracked in your round summaries), quoted
   verbatim under their canonical pillar number and title
