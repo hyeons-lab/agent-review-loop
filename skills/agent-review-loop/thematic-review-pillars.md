@@ -32,6 +32,19 @@ this file; it writes to the Tier 2 file instead.
    different repo on a different stack. Repo-specific lessons belong in the
    repo-local file.
 
+   Slice learnings by pillar before spawning reviewers: the full files stay
+   the source of truth, but no reviewer reads them whole. Before spawning,
+   cut each file that exists into per-pillar slices (the lines from each
+   `### Pillar N:` heading up to the next `### Pillar` heading) under the
+   run scratch directory, and build a learnings titles index (every
+   `### Pillar` heading plus every bullet title line, without bodies)
+   covering every file that exists. Hand each reviewer only the slices for
+   its own pillars plus the index, so it can flag a hazard owned by another
+   pillar for synthesis to check. Synthesis reads the slices for pillars
+   that produced findings or flags, plus any further section it needs by
+   heading. If a file lacks the canonical headings, hand it whole and say
+   so in the round summary.
+
 ## 2. The 8 Core Categories (Pillars)
 
 Reviewers evaluate changes across these 8 areas. The `### Pillar N:` titles
@@ -132,6 +145,10 @@ When a review loop learns a recurring pattern worth keeping:
 4. **Add or merge (living document evolution)**: incorporate all actionable
    suggestions without arbitrary quotas. Merge into an existing bullet by
    actively rewriting it broader, or add it as a distinct general bullet.
+   Keep each bullet at or under 600 characters: one trigger, one hazard,
+   one fix shape, one verification. A lesson that needs more is two
+   lessons; split it, or merge it broader. While editing a pillar, tighten
+   any bullet over the budget in that pillar.
 5. **Clean up total bullets**: do not just keep adding new bullets without
    cleaning up the total bullets after adding them. Review all bullets under the
    pillar, consolidate overlapping concepts, eliminate redundancies, and

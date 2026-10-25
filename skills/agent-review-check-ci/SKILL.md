@@ -382,6 +382,10 @@ When updating the target refinements file, follow this protocol strictly:
 5. **Format the bullet**: Each bullet must adhere to the exact structure:
    `- **Title**: Trigger condition (when doing X): hazard or failure mode (Y occurs); fix shape and verification guidance (fix by doing Z, and verify via W).`
    - Single bullet starting with `- **Title**:` (2 to 5 words in Title Case).
+   - Length budget: keep each bullet at or under 600 characters (one
+     trigger, one hazard, one fix shape, one verification). A lesson that
+     needs more is two lessons; split it, or merge it broader. While
+     editing a pillar, tighten any bullet over the budget in that pillar.
    - Domain-neutral trigger, hazard, and fix shape.
    - Tool-agnostic: never name an agent, model, runtime, or assistant tool.
    - Zero attribution: no signatures, author tags, dates, or loop IDs.

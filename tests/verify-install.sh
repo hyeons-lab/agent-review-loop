@@ -1965,6 +1965,23 @@ check "convergence: no em dash in loop skill" test "$(grep -c "$(printf '\342\20
 check "convergence: no em dash in report skill" test "$(grep -c "$(printf '\342\200\224')" "${REPORT_SKILL}" || true)" = "0"
 check "convergence: pillar names untouched" test "$(grep -c -E '^[1-8]\. (Functional Correctness, Logic & Edge Cases|Security, Authentication & Input Sanitization|Concurrency, Asynchrony & Lifecycle Management|Error Handling, Resilience & Diagnostics|Interface Contracts, API Design & Compatibility|Performance, Resource Efficiency & Scalability|Code Simplification, Clean Architecture & Maintainability|Testing, Observability & Verification Invariants)$' "${LOOP_SKILL}")" = "8"
 
+# Learnings slicing and bullet budget (token cost control).
+PILLARS_FILE="${BUNDLE}/skills/agent-review-loop/thematic-review-pillars.md"
+PRC_SKILL="${BUNDLE}/skills/agent-review-pr-comments/SKILL.md"
+CHECKCI_SKILL="${BUNDLE}/skills/agent-review-check-ci/SKILL.md"
+check "slicing: loop reviewers get own-pillar slices" grep -q -F 'only the learnings slices for its own pillars' "${LOOP_SKILL}"
+check "slicing: report reviewers get own-pillar slices" grep -q -F 'only the learnings slices for its own pillars' "${REPORT_SKILL}"
+check "slicing: loop hands a learnings titles index" grep -q -F 'learnings titles index' "${LOOP_SKILL}"
+check "slicing: report hands a learnings titles index" grep -q -F 'learnings titles index' "${REPORT_SKILL}"
+check "slicing: no whole-learnings instruction in loop" test "$(grep -c -F 'every shared learnings file that' "${LOOP_SKILL}" || true)" = "0"
+check "slicing: no whole-learnings instruction in report" test "$(grep -c -F 'every shared learnings file that' "${REPORT_SKILL}" || true)" = "0"
+check "slicing: pillars define the slicing rule" grep -q -F 'Slice learnings by pillar before spawning reviewers' "${PILLARS_FILE}"
+check "concise: bullet budget in pillars" grep -q -F 'at or under 600 characters' "${PILLARS_FILE}"
+check "concise: bullet budget in loop filing" grep -q -F 'at or under 600 characters' "${LOOP_SKILL}"
+check "concise: bullet budget in report filing" grep -q -F 'at or under 600 characters' "${REPORT_SKILL}"
+check "concise: bullet budget in pr-comments filing" grep -q -F 'at or under 600 characters' "${PRC_SKILL}"
+check "concise: bullet budget in check-ci filing" grep -q -F 'at or under 600 characters' "${CHECKCI_SKILL}"
+
 echo
 echo "RESULT: ${pass} passed, ${fail} failed"
 test "${fail}" = "0"

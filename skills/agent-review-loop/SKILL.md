@@ -287,6 +287,11 @@ Two tiers, same contract in every runtime:
      `$REVIEW_REFINEMENTS_LEGACY=1` is set; skipped by default so
      repo-specific inference lessons do not pollute other projects).
 
+   Reviewers never read these files whole. Slice them by pillar before
+   spawning, per the slicing rule in the base pillars file: each reviewer
+   gets its own pillars' slices plus the titles index, and synthesis reads
+   sections on demand by heading.
+
 ## 4. Diff Extraction and Noise Filtering
 
 Review the **working-tree diff** (staged plus unstaged). When the tree is
@@ -506,7 +511,10 @@ Every reviewer prompt must include:
   Embed the diff text only when it is small enough to fit comfortably.
 - The instruction to read the repo's own guidance first (`AGENTS.md`,
   `CLAUDE.md`, `GEMINI.md`, `.editorconfig`, CI workflows), the bundled base
-  pillars, and every shared learnings file that exists.
+  pillars, only the learnings slices for its own pillars, and the
+  learnings titles index covering every learnings file that exists.
+  The index lets the reviewer flag another pillar's hazard without
+  reading that pillar's bullets.
 - For rounds after the first: pass ONLY the bullets newly added or refined
   during THIS review loop run (tracked in your round summaries), quoted
   verbatim under their canonical pillar number and title
@@ -550,8 +558,8 @@ Every reviewer prompt must include:
   cheaply), or `read`. A `bug` or `correctness` finding backed only by
   `read` is `unreproduced` (see below).
 - Exact paths and bounded search: give the absolute path of every file the
-  reviewer must read (diff, pillars, learnings files, repo guidance), so
-  nothing needs locating. The reviewer must not run unbounded filesystem
+  reviewer must read (diff, pillars, learnings slice files, titles index,
+  repo guidance), so nothing needs locating. The reviewer must not run unbounded filesystem
   scans (`find /`, `ls -R` from the filesystem root, unscoped recursive
   greps) to locate them; scope every search to the repository or worktree.
   An unbounded scan parks the reviewer behind a result it never needs and
@@ -1303,6 +1311,10 @@ Follow this exact sequence whenever filing learnings:
    `- **Title**: Trigger condition (when doing X): hazard or failure mode (Y occurs); fix shape and verification guidance (fix by doing Z, and verify via W).`
    - Single bullet starting with `- **Title**:`.
    - Title in Title Case (2 to 5 words).
+   - Length budget: keep each bullet at or under 600 characters (one
+     trigger, one hazard, one fix shape, one verification). A lesson that
+     needs more is two lessons; split it, or merge it broader. While
+     editing a pillar, tighten any bullet over the budget in that pillar.
    - Domain-neutral trigger, hazard, and fix shape.
    - Tool-agnostic: never name an agent, model, runtime, or assistant tool.
    - Zero attribution: no signatures, author tags, dates, or loop IDs.

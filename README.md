@@ -115,6 +115,9 @@ to repeat reviews. The mechanisms (details in `SKILL.md`):
   `redundancy 2` runs a twin every full round.
 - **Effort routing**: the chosen effort is the floor; named (`hot`), very
   large, high-churn, or high-risk scopes are raised to `max`.
+- **Sliced learnings**: reviewers receive only their own pillars'
+  refinements plus a titles index, so the shared learnings can grow
+  without taxing every reviewer. New bullets are capped at 600 characters.
 
 ## Upgrade
 
